@@ -1,0 +1,37 @@
+@startuml SGMA_Maquina_de_Estados
+' SGMA - Ciclo de vida da Solicitacao (secao 4 do documento de requisitos)
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+
+[*] --> Aberta : Cliente abre solicitacao (RF004/RF005)
+
+Aberta --> EmAnalise : Iniciar analise [Gestor]
+EmAnalise --> AguardandoInformacao : Solicitar complemento [Gestor]
+AguardandoInformacao --> EmAnalise : Responder [Cliente]
+EmAnalise --> OrcamentoEnviado : Enviar orcamento [Gestor]
+OrcamentoEnviado --> EmAnalise : Iniciar revisao [Gestor]
+OrcamentoEnviado --> Aprovada : Aprovar [Cliente]\n[versao vigente e dentro da validade]
+OrcamentoEnviado --> Recusada : Recusar [Cliente]
+Aprovada --> Encaminhada : Registrar encaminhamento [Gestor]
+Encaminhada --> Concluida : Confirmar realizacao [Responsavel]
+
+state "Em análise" as EmAnalise
+state "Aguardando informação" as AguardandoInformacao
+state "Orçamento enviado" as OrcamentoEnviado
+state "Concluída" as Concluida
+
+note "Recusada, Cancelada e Concluída são finais (RN07).\nCancelar: Cliente ou Gestor, com motivo,\nsomente antes do encaminhamento." as N1
+
+Aberta --> Cancelada : Cancelar c/ motivo
+EmAnalise --> Cancelada : Cancelar c/ motivo
+AguardandoInformacao --> Cancelada : Cancelar c/ motivo
+OrcamentoEnviado --> Cancelada : Cancelar c/ motivo
+Aprovada --> Cancelada : Cancelar c/ motivo
+
+Concluida --> [*]
+Recusada --> [*]
+Cancelada --> [*]
+@enduml
