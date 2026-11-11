@@ -1,0 +1,158 @@
+@startuml SGMA_Diagrama_de_Classes
+' SGMA - Diagrama de Classes do Dominio (pacote br.ufscar.tes.domain)
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #444444
+}
+hide empty members
+
+package "br.ufscar.tes.domain" {
+
+  ' ---------------- Usuarios (heranca JOINED) ----------------
+  abstract class Usuario {
+    - id : Long
+    - nome : String
+    - email : String
+    - senhaHash : String
+    - ativo : boolean
+  }
+
+  class Cliente {
+    - documento : String
+    - telefone : String
+  }
+
+  class GestorSolicitacoes
+  class ResponsavelConfirmacao
+
+  Usuario <|-- Cliente
+  Usuario <|-- GestorSolicitacoes
+  Usuario <|-- ResponsavelConfirmacao
+
+  ' ---------------- Aeronave ----------------
+  class Aeronave {
+    - id : Long
+    - matricula : String
+    - fabricante : String
+    - modelo : String
+    - ativa : boolean
+    - justificativaVinculo : String [0..1]
+  }
+
+  ' ---------------- Solicitacao ----------------
+  class Solicitacao {
+    - id : Long
+    - tipoServico : TipoServico
+    - descricao : String
+    - anexo : String [0..1]
+    - dataHoraAbertura : LocalDateTime
+    - situacao : SituacaoSolicitacao
+    - observacoesTriagem : String [0..1]
+    - descricaoEncaminhamento : String [0..1]
+    - dataHoraEncaminhamento : LocalDateTime [0..1]
+    - motivoCancelamento : String [0..1]
+    --
+    + iniciarAnalise()
+    + solicitarComplemento(pergunta : String)
+    + responderComplemento(resposta : String)
+    + enviarOrcamento(o : Orcamento)
+    + iniciarRevisao()
+    + aprovarOrcamento()
+    + recusarOrcamento()
+    + encaminhar(descricao : String)
+    + confirmar(c : Confirmacao)
+    + cancelar(motivo : String)
+    + getOrcamentoVigente() : Orcamento
+  }
+
+  class Complemento {
+    - id : Long
+    - pergunta : String
+    - dataHoraPergunta : LocalDateTime
+    - resposta : String [0..1]
+    - dataHoraResposta : LocalDateTime [0..1]
+  }
+
+  class Orcamento {
+    - id : Long
+    - versao : int
+    - descricaoServico : String
+    - valorTotal : BigDecimal
+    - dataValidade : LocalDate
+    - dataHoraEnvio : LocalDateTime
+    - vigente : boolean
+    - decisao : DecisaoOrcamento
+    - dataHoraDecisao : LocalDateTime [0..1]
+    --
+    + estaVencido(hoje : LocalDate) : boolean
+    + podeSerDecidido(hoje : LocalDate) : boolean
+  }
+
+  class Confirmacao {
+    - id : Long
+    - dataRealizacaoInformada : LocalDate
+    - dataHoraRegistro : LocalDateTime
+    - referencia : String [0..1]
+  }
+
+  class EventoHistorico {
+    - id : Long
+    - dataHora : LocalDateTime
+    - situacaoAnterior : SituacaoSolicitacao [0..1]
+    - situacaoNova : SituacaoSolicitacao
+    - descricao : String
+  }
+
+  note right of Aeronave
+    matricula única entre
+    aeronaves ativas (RN02)
+  end note
+
+  ' ---------------- Enums ----------------
+  enum SituacaoSolicitacao {
+    ABERTA
+    EM_ANALISE
+    AGUARDANDO_INFORMACAO
+    ORCAMENTO_ENVIADO
+    APROVADA
+    ENCAMINHADA
+    CONCLUIDA
+    RECUSADA
+    CANCELADA
+  }
+
+  enum DecisaoOrcamento {
+    PENDENTE
+    APROVADO
+    RECUSADO
+  }
+
+  enum TipoServico {
+    INSPECAO
+    REPARO
+    MODIFICACAO
+    OUTRO
+  }
+
+  ' ---------------- Associacoes ----------------
+  Cliente "1" -- "0..*" Aeronave : possui >
+  Cliente "1" -- "0..*" Solicitacao : abre >
+  Aeronave "1" -- "0..*" Solicitacao : < refere-se a
+
+  Solicitacao "1" *-- "0..*" Complemento
+  Solicitacao "1" *-- "0..*" Orcamento : versoes >
+  Solicitacao "1" *-- "0..1" Confirmacao
+  Solicitacao "1" *-- "1..*" EventoHistorico : historico >
+
+  GestorSolicitacoes "1" -- "0..*" Orcamento : elabora >
+  Cliente "0..1" -- "0..*" Orcamento : decide >
+  ResponsavelConfirmacao "1" -- "0..*" Confirmacao : registra >
+  Usuario "1" -- "0..*" EventoHistorico : autor de >
+
+  Solicitacao ..> SituacaoSolicitacao
+  Solicitacao ..> TipoServico
+  Orcamento ..> DecisaoOrcamento
+}
+@enduml
