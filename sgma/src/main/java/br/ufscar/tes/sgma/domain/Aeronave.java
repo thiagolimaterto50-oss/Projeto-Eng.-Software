@@ -43,6 +43,15 @@ public class Aeronave extends Entidade {
     this.cliente = cliente;
   }
 
+  public void atualizar(
+      String matricula, String fabricante, String modelo, String justificativa, boolean ativa) {
+    this.matricula = matricula;
+    this.fabricante = fabricante;
+    this.modelo = modelo;
+    this.justificativaVinculo = justificativa;
+    this.ativa = ativa;
+  }
+
   public String getMatricula() {
     return matricula;
   }

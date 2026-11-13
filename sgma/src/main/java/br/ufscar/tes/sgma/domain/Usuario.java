@@ -26,6 +26,22 @@ public abstract class Usuario extends Entidade {
     this.senhaHash = senhaHash;
   }
 
+  public void definirSenhaHash(String hash) {
+    this.senhaHash = hash;
+  }
+
+  public void atualizarDados(String nome, String email, boolean ativo) {
+    this.nome = nome;
+    this.email = email;
+    this.ativo = ativo;
+  }
+
+  public String getPerfil() {
+    if (this instanceof Cliente) return "CLIENTE";
+    if (this instanceof GestorSolicitacoes) return "GESTOR";
+    return "RESPONSAVEL";
+  }
+
   public String getNome() {
     return nome;
   }

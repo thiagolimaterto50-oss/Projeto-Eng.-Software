@@ -13,7 +13,8 @@ public interface ISolicitacaoDAO extends CrudRepository<Solicitacao, Long> {
   @Query(
       """
         select s from Solicitacao s
-        where (:situacao is null or s.situacao = :situacao)
+        where (:clienteId is null or s.cliente.id = :clienteId)
+          and (:situacao is null or s.situacao = :situacao)
           and (lower(s.descricao) like :busca escape '!'
             or lower(s.aeronave.matricula) like :busca escape '!'
             or lower(s.cliente.nome) like :busca escape '!')
@@ -21,5 +22,11 @@ public interface ISolicitacaoDAO extends CrudRepository<Solicitacao, Long> {
   Page<Solicitacao> pesquisar(
       @Param("situacao") SituacaoSolicitacao situacao,
       @Param("busca") String busca,
+      @Param("clienteId") Long clienteId,
       Pageable pageable);
+
+  @Query(
+      "select count(s) from Solicitacao s where (:clienteId is null or s.cliente.id = :clienteId)"
+          + " and (:situacao is null or s.situacao = :situacao)")
+  long contar(@Param("clienteId") Long clienteId, @Param("situacao") SituacaoSolicitacao situacao);
 }

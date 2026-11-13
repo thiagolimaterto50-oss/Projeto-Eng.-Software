@@ -94,14 +94,20 @@ public class Solicitacao extends Entidade {
   public void responderComplemento(Long complementoId, String resposta, Cliente autor) {
     if (situacao != SituacaoSolicitacao.AGUARDANDO_INFORMACAO)
       throw new IllegalStateException("Esta solicitação não está aguardando informações.");
-    if (autor == null || !autor.isAtivo() || (autor != cliente
-        && (cliente.getId() == null || !cliente.getId().equals(autor.getId()))))
+    if (autor == null
+        || !autor.isAtivo()
+        || (autor != cliente
+            && (cliente.getId() == null || !cliente.getId().equals(autor.getId()))))
       throw new IllegalArgumentException("Somente o cliente da solicitação pode responder.");
-    Complemento complemento = complementos.stream()
-        .filter(c -> complementoId != null && complementoId.equals(c.getId()))
-        .findFirst().orElseThrow(() -> new IllegalArgumentException("Complemento não pertence a esta solicitação."));
+    Complemento complemento =
+        complementos.stream()
+            .filter(c -> complementoId != null && complementoId.equals(c.getId()))
+            .findFirst()
+            .orElseThrow(
+                () -> new IllegalArgumentException("Complemento não pertence a esta solicitação."));
     complemento.responder(resposta);
-    transicionar(SituacaoSolicitacao.EM_ANALISE, "Complemento respondido. Análise retomada.", autor);
+    transicionar(
+        SituacaoSolicitacao.EM_ANALISE, "Complemento respondido. Análise retomada.", autor);
   }
 
   public boolean isCancelavel() {
@@ -121,9 +127,11 @@ public class Solicitacao extends Entidade {
     dataHoraEncaminhamento = LocalDateTime.now();
   }
 
-  public void confirmar(java.time.LocalDate data, String referencia, ResponsavelConfirmacao responsavel) {
+  public void confirmar(
+      java.time.LocalDate data, String referencia, ResponsavelConfirmacao responsavel) {
     if (situacao != SituacaoSolicitacao.ENCAMINHADA || confirmacao != null)
-      throw new IllegalStateException("Somente solicitações encaminhadas podem ser confirmadas uma única vez.");
+      throw new IllegalStateException(
+          "Somente solicitações encaminhadas podem ser confirmadas uma única vez.");
     if (data == null || data.isBefore(dataHoraEncaminhamento.toLocalDate()))
       throw new IllegalArgumentException("A realização não pode ser anterior ao encaminhamento.");
     Confirmacao nova = new Confirmacao(this, data, referencia, responsavel);
@@ -131,34 +139,51 @@ public class Solicitacao extends Entidade {
     confirmacao = nova;
   }
 
-  public String getDescricaoEncaminhamento() { return descricaoEncaminhamento; }
-  public LocalDateTime getDataHoraEncaminhamento() { return dataHoraEncaminhamento; }
+  public String getDescricaoEncaminhamento() {
+    return descricaoEncaminhamento;
+  }
 
-  public void enviarOrcamento(String descricao, java.math.BigDecimal valor, java.time.LocalDate validade, GestorSolicitacoes gestor) {
+  public LocalDateTime getDataHoraEncaminhamento() {
+    return dataHoraEncaminhamento;
+  }
+
+  public void enviarOrcamento(
+      String descricao,
+      java.math.BigDecimal valor,
+      java.time.LocalDate validade,
+      GestorSolicitacoes gestor) {
     if (situacao != SituacaoSolicitacao.EM_ANALISE)
       throw new IllegalStateException("O orçamento só pode ser enviado durante a análise.");
     int versao = orcamentos.stream().mapToInt(Orcamento::getVersao).max().orElse(0) + 1;
     Orcamento novo = new Orcamento(this, versao, descricao, valor, validade, gestor);
-    transicionar(SituacaoSolicitacao.ORCAMENTO_ENVIADO, "Orçamento v" + versao + " enviado.", gestor);
+    transicionar(
+        SituacaoSolicitacao.ORCAMENTO_ENVIADO, "Orçamento v" + versao + " enviado.", gestor);
     orcamentos.forEach(Orcamento::substituir);
     orcamentos.add(novo);
   }
 
   public void iniciarRevisao(Long orcamentoId, GestorSolicitacoes gestor) {
     Orcamento atual = orcamentoParaDecisaoOuRevisao(orcamentoId);
-    transicionar(SituacaoSolicitacao.EM_ANALISE, "Revisão do orçamento v" + atual.getVersao() + " iniciada.", gestor);
+    transicionar(
+        SituacaoSolicitacao.EM_ANALISE,
+        "Revisão do orçamento v" + atual.getVersao() + " iniciada.",
+        gestor);
     atual.substituir();
   }
 
   public void decidirOrcamento(Long orcamentoId, DecisaoOrcamento decisao, Cliente autor) {
-    if (autor == null || !autor.isAtivo() || (autor != cliente
-        && (cliente.getId() == null || !cliente.getId().equals(autor.getId()))))
+    if (autor == null
+        || !autor.isAtivo()
+        || (autor != cliente
+            && (cliente.getId() == null || !cliente.getId().equals(autor.getId()))))
       throw new IllegalArgumentException("Somente o cliente da solicitação pode decidir.");
     Orcamento atual = orcamentoParaDecisaoOuRevisao(orcamentoId);
     atual.decidir(decisao, autor);
     boolean aprovado = decisao == DecisaoOrcamento.APROVADO;
-    transicionar(aprovado ? SituacaoSolicitacao.APROVADA : SituacaoSolicitacao.RECUSADA,
-        "Orçamento v" + atual.getVersao() + (aprovado ? " aprovado." : " recusado."), autor);
+    transicionar(
+        aprovado ? SituacaoSolicitacao.APROVADA : SituacaoSolicitacao.RECUSADA,
+        "Orçamento v" + atual.getVersao() + (aprovado ? " aprovado." : " recusado."),
+        autor);
   }
 
   private Orcamento orcamentoParaDecisaoOuRevisao(Long id) {
@@ -166,7 +191,8 @@ public class Solicitacao extends Entidade {
       throw new IllegalStateException("Esta solicitação não está aguardando decisão de orçamento.");
     Orcamento atual = getOrcamentoVigente();
     if (atual == null || id == null || !id.equals(atual.getId()))
-      throw new IllegalArgumentException("Este orçamento não é a versão vigente desta solicitação.");
+      throw new IllegalArgumentException(
+          "Este orçamento não é a versão vigente desta solicitação.");
     return atual;
   }
 
@@ -190,6 +216,31 @@ public class Solicitacao extends Entidade {
     if (autor == null || !autor.isAtivo()) throw new IllegalArgumentException("Autor inválido.");
     historico.add(new EventoHistorico(this, situacao, destino, descricao, autor));
     situacao = destino;
+  }
+
+  public String getObservacoesTriagem() {
+    return observacoesTriagem;
+  }
+
+  public void registrarTriagem(String observacoes, GestorSolicitacoes gestor) {
+    if (situacao != SituacaoSolicitacao.EM_ANALISE)
+      throw new IllegalStateException("Registre a triagem durante a análise.");
+    if (observacoes == null || observacoes.isBlank() || observacoes.length() > 2000)
+      throw new IllegalArgumentException("Informe observações de até 2000 caracteres.");
+    transicionar(situacao, "Observações de triagem atualizadas.", gestor);
+    observacoesTriagem = observacoes.strip();
+  }
+
+  public void registrarAnexo(String nome, Usuario autor) {
+    if (!isCancelavel())
+      throw new IllegalStateException(
+          "Não é possível alterar o anexo após encaminhamento ou encerramento.");
+    transicionar(situacao, "Anexo atualizado: " + nome, autor);
+    anexo = nome;
+  }
+
+  public String getAnexo() {
+    return anexo;
   }
 
   public Cliente getCliente() {

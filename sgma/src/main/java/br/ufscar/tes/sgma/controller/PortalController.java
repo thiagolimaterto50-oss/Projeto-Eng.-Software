@@ -23,18 +23,21 @@ public class PortalController {
   private final ISolicitacaoDAO solicitacoes;
   private final CadastroService cadastro;
   private final SolicitacaoService servico;
+  private final AcessoService acesso;
 
   public PortalController(
       IClienteDAO clientes,
       IAeronaveDAO aeronaves,
       ISolicitacaoDAO solicitacoes,
       CadastroService cadastro,
-      SolicitacaoService servico) {
+      SolicitacaoService servico,
+      AcessoService acesso) {
     this.clientes = clientes;
     this.aeronaves = aeronaves;
     this.solicitacoes = solicitacoes;
     this.cadastro = cadastro;
     this.servico = servico;
+    this.acesso = acesso;
   }
 
   @ModelAttribute
@@ -46,13 +49,16 @@ public class PortalController {
   @GetMapping("/")
   @Transactional(readOnly = true)
   public String painel(Model model) {
-    model.addAttribute("total", solicitacoes.count());
-    model.addAttribute("abertas", solicitacoes.countBySituacao(SituacaoSolicitacao.ABERTA));
-    model.addAttribute("analise", solicitacoes.countBySituacao(SituacaoSolicitacao.EM_ANALISE));
-    model.addAttribute("aeronavesTotal", aeronaves.count());
+    model.addAttribute("total", solicitacoes.contar(acesso.filtroCliente(), null));
+    model.addAttribute(
+        "abertas", solicitacoes.contar(acesso.filtroCliente(), SituacaoSolicitacao.ABERTA));
+    model.addAttribute(
+        "analise", solicitacoes.contar(acesso.filtroCliente(), SituacaoSolicitacao.EM_ANALISE));
+    model.addAttribute("aeronavesTotal", aeronavesVisiveis().size());
     var recentes =
         solicitacoes
-            .pesquisar(null, "%", PageRequest.of(0, 5, Sort.by("id").descending()))
+            .pesquisar(
+                null, "%", acesso.filtroCliente(), PageRequest.of(0, 5, Sort.by("id").descending()))
             .getContent();
     // Materializa os vínculos ainda na transação, sem Open Session in View.
     recentes.forEach(
@@ -75,12 +81,13 @@ public class PortalController {
   @PostMapping("/clientes")
   public String cadastrarCliente(
       @Valid @ModelAttribute("form") CadastroService.ClienteForm form,
+      @RequestParam(defaultValue = "") String senha,
       BindingResult errors,
       Model model,
       RedirectAttributes redirect) {
     if (errors.hasErrors()) return clientes(model);
     try {
-      cadastro.cadastrarCliente(form);
+      cadastro.cadastrarCliente(form, senha);
     } catch (IllegalArgumentException e) {
       errors.reject("cadastro", e.getMessage());
       return clientes(model);
@@ -92,10 +99,14 @@ public class PortalController {
   @GetMapping("/aeronaves")
   @Transactional(readOnly = true)
   public String aeronaves(Model model) {
-    var lista = aeronaves.findAll();
+    var lista = aeronavesVisiveis();
     lista.forEach(a -> a.getCliente().getNome());
     model.addAttribute("aeronaves", lista);
-    model.addAttribute("clientes", clientes.findAll());
+    model.addAttribute(
+        "clientes",
+        acesso.atual() instanceof GestorSolicitacoes
+            ? clientes.findAll().stream().filter(Cliente::isAtivo).toList()
+            : java.util.List.of());
     if (!model.containsAttribute("form"))
       model.addAttribute("form", new CadastroService.AeronaveForm("", "", "", null));
     return "aeronaves";
@@ -104,12 +115,13 @@ public class PortalController {
   @PostMapping("/aeronaves")
   public String cadastrarAeronave(
       @Valid @ModelAttribute("form") CadastroService.AeronaveForm form,
+      @RequestParam(defaultValue = "") String justificativaVinculo,
       BindingResult errors,
       Model model,
       RedirectAttributes redirect) {
     if (errors.hasErrors()) return aeronaves(model);
     try {
-      cadastro.cadastrarAeronave(form);
+      cadastro.cadastrarAeronave(form, justificativaVinculo);
     } catch (IllegalArgumentException e) {
       errors.reject("cadastro", e.getMessage());
       return aeronaves(model);
@@ -136,6 +148,7 @@ public class PortalController {
         solicitacoes.pesquisar(
             situacao,
             "%" + termo + "%",
+            acesso.filtroCliente(),
             PageRequest.of(Math.max(0, pagina), 10, Sort.by("id").descending()));
     resultado.forEach(
         s -> {
@@ -152,7 +165,9 @@ public class PortalController {
   @GetMapping("/solicitacoes/nova")
   @Transactional(readOnly = true)
   public String nova(Model model) {
-    var lista = aeronaves.findAll().stream().filter(Aeronave::isAtiva).toList();
+    acesso.cliente();
+    var lista =
+        aeronavesVisiveis().stream().filter(a -> a.isAtiva() && a.getCliente().isAtivo()).toList();
     lista.forEach(a -> a.getCliente().getNome());
     model.addAttribute("aeronaves", lista);
     if (!model.containsAttribute("form"))
@@ -184,44 +199,58 @@ public class PortalController {
         solicitacoes
             .findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+    acesso.verificar(s);
     s.getCliente().getNome();
     s.getAeronave().getMatricula();
     s.getHistorico().forEach(e -> e.getAutor().getNome());
     s.getComplementos().size();
     if (s.getConfirmacao() != null) s.getConfirmacao().getResponsavel().getNome();
-    s.getOrcamentos().forEach(o -> {
-      o.getElaborador().getNome();
-      if (o.getDecisor() != null) o.getDecisor().getNome();
-    });
+    s.getOrcamentos()
+        .forEach(
+            o -> {
+              o.getElaborador().getNome();
+              if (o.getDecisor() != null) o.getDecisor().getNome();
+            });
     model.addAttribute("solicitacao", s);
     return "detalhes";
   }
 
   @PostMapping("/solicitacoes/{id}/complementos")
-  public String pedirComplemento(@PathVariable Long id,
-      @Valid SolicitacaoService.PerguntaForm form, BindingResult errors,
+  public String pedirComplemento(
+      @PathVariable Long id,
+      @Valid SolicitacaoService.PerguntaForm form,
+      BindingResult errors,
       RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Informe uma pergunta de até 2000 caracteres.");
-    else try {
-      servico.solicitarComplemento(id, form);
-      redirect.addFlashAttribute("sucesso", "Pergunta registrada. Aguardando informação do cliente.");
-    } catch (IllegalArgumentException | IllegalStateException e) {
-      redirect.addFlashAttribute("erro", e.getMessage());
-    }
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", "Informe uma pergunta de até 2000 caracteres.");
+    else
+      try {
+        servico.solicitarComplemento(id, form);
+        redirect.addFlashAttribute(
+            "sucesso", "Pergunta registrada. Aguardando informação do cliente.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
   @PostMapping("/solicitacoes/{id}/complementos/{complementoId}/responder")
-  public String responderComplemento(@PathVariable Long id, @PathVariable Long complementoId,
-      @Valid SolicitacaoService.RespostaForm form, BindingResult errors,
+  public String responderComplemento(
+      @PathVariable Long id,
+      @PathVariable Long complementoId,
+      @Valid SolicitacaoService.RespostaForm form,
+      BindingResult errors,
       RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Informe uma resposta de até 2000 caracteres.");
-    else try {
-      servico.responderComplemento(id, complementoId, form);
-      redirect.addFlashAttribute("sucesso", "Resposta registrada. Solicitação voltou para análise.");
-    } catch (IllegalArgumentException | IllegalStateException e) {
-      redirect.addFlashAttribute("erro", e.getMessage());
-    }
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", "Informe uma resposta de até 2000 caracteres.");
+    else
+      try {
+        servico.responderComplemento(id, complementoId, form);
+        redirect.addFlashAttribute(
+            "sucesso", "Resposta registrada. Solicitação voltou para análise.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -237,33 +266,54 @@ public class PortalController {
   }
 
   @PostMapping("/solicitacoes/{id}/orcamentos")
-  public String enviarOrcamento(@PathVariable Long id, @Valid SolicitacaoService.OrcamentoForm form,
-      BindingResult errors, RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Confira a descrição, o valor positivo (até duas casas decimais) e a validade a partir de hoje.");
-    else try {
-      servico.enviarOrcamento(id, form);
-      redirect.addFlashAttribute("sucesso", "Orçamento enviado para decisão do cliente.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+  public String enviarOrcamento(
+      @PathVariable Long id,
+      @Valid SolicitacaoService.OrcamentoForm form,
+      BindingResult errors,
+      RedirectAttributes redirect) {
+    if (errors.hasErrors())
+      redirect.addFlashAttribute(
+          "erro",
+          "Confira a descrição, o valor positivo (até duas casas decimais) e a validade a partir de"
+              + " hoje.");
+    else
+      try {
+        servico.enviarOrcamento(id, form);
+        redirect.addFlashAttribute("sucesso", "Orçamento enviado para decisão do cliente.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
   @PostMapping("/solicitacoes/{id}/orcamentos/{oid}/decidir")
-  public String decidirOrcamento(@PathVariable Long id, @PathVariable Long oid,
-      @Valid SolicitacaoService.DecisaoForm form, BindingResult errors, RedirectAttributes redirect) {
+  public String decidirOrcamento(
+      @PathVariable Long id,
+      @PathVariable Long oid,
+      @Valid SolicitacaoService.DecisaoForm form,
+      BindingResult errors,
+      RedirectAttributes redirect) {
     if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Selecione aprovar ou recusar.");
-    else try {
-      servico.decidirOrcamento(id, oid, form);
-      redirect.addFlashAttribute("sucesso", "Decisão registrada no histórico.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+    else
+      try {
+        servico.decidirOrcamento(id, oid, form);
+        redirect.addFlashAttribute("sucesso", "Decisão registrada no histórico.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
   @PostMapping("/solicitacoes/{id}/orcamentos/{oid}/revisar")
-  public String revisarOrcamento(@PathVariable Long id, @PathVariable Long oid, RedirectAttributes redirect) {
+  public String revisarOrcamento(
+      @PathVariable Long id, @PathVariable Long oid, RedirectAttributes redirect) {
     try {
       servico.iniciarRevisao(id, oid);
-      redirect.addFlashAttribute("sucesso", "Revisão iniciada. Envie uma nova versão após a análise.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+      redirect.addFlashAttribute(
+          "sucesso", "Revisão iniciada. Envie uma nova versão após a análise.");
+    } catch (IllegalArgumentException | IllegalStateException e) {
+      redirect.addFlashAttribute("erro", e.getMessage());
+    }
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -273,34 +323,78 @@ public class PortalController {
       @Valid SolicitacaoService.CancelamentoForm form,
       BindingResult errors,
       RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Informe um motivo de até 1000 caracteres.");
-    else try {
-      servico.cancelar(id, form);
-      redirect.addFlashAttribute("sucesso", "Solicitação cancelada.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", "Informe um motivo de até 1000 caracteres.");
+    else
+      try {
+        servico.cancelar(id, form);
+        redirect.addFlashAttribute("sucesso", "Solicitação cancelada.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
   @PostMapping("/solicitacoes/{id}/encaminhar")
-  public String encaminhar(@PathVariable Long id, @Valid SolicitacaoService.EncaminhamentoForm form,
-      BindingResult errors, RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Informe o encaminhamento, até 2000 caracteres.");
-    else try {
-      servico.encaminhar(id, form);
-      redirect.addFlashAttribute("sucesso", "Serviço encaminhado. Aguardando confirmação da realização.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+  public String encaminhar(
+      @PathVariable Long id,
+      @Valid SolicitacaoService.EncaminhamentoForm form,
+      BindingResult errors,
+      RedirectAttributes redirect) {
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", "Informe o encaminhamento, até 2000 caracteres.");
+    else
+      try {
+        servico.encaminhar(id, form);
+        redirect.addFlashAttribute(
+            "sucesso", "Serviço encaminhado. Aguardando confirmação da realização.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
   @PostMapping("/solicitacoes/{id}/confirmar")
-  public String confirmar(@PathVariable Long id, @Valid SolicitacaoService.ConfirmacaoForm form,
-      BindingResult errors, RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Informe a data de realização até hoje e uma referência de até 500 caracteres.");
-    else try {
-      servico.confirmar(id, form);
-      redirect.addFlashAttribute("sucesso", "Realização confirmada. Solicitação concluída.");
-    } catch (IllegalArgumentException | IllegalStateException e) { redirect.addFlashAttribute("erro", e.getMessage()); }
+  public String confirmar(
+      @PathVariable Long id,
+      @Valid SolicitacaoService.ConfirmacaoForm form,
+      BindingResult errors,
+      RedirectAttributes redirect) {
+    if (errors.hasErrors())
+      redirect.addFlashAttribute(
+          "erro", "Informe a data de realização até hoje e uma referência de até 500 caracteres.");
+    else
+      try {
+        servico.confirmar(id, form);
+        redirect.addFlashAttribute("sucesso", "Realização confirmada. Solicitação concluída.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
     return "redirect:/solicitacoes/" + id;
   }
 
+  private java.util.List<Aeronave> aeronavesVisiveis() {
+    Long clienteId = acesso.filtroCliente();
+    return aeronaves.findAll().stream()
+        .filter(a -> clienteId == null || a.getCliente().getId().equals(clienteId))
+        .toList();
+  }
+
+  @PostMapping("/solicitacoes/{id}/triagem")
+  public String triagem(
+      @PathVariable Long id,
+      @Valid SolicitacaoService.TriagemForm form,
+      BindingResult errors,
+      RedirectAttributes redirect) {
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", "Informe observações de até 2000 caracteres.");
+    else
+      try {
+        servico.registrarTriagem(id, form);
+        redirect.addFlashAttribute("sucesso", "Triagem registrada.");
+      } catch (IllegalArgumentException | IllegalStateException e) {
+        redirect.addFlashAttribute("erro", e.getMessage());
+      }
+    return "redirect:/solicitacoes/" + id;
+  }
 }

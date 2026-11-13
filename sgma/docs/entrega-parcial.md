@@ -1,49 +1,30 @@
-# Entrega parcial — 10/11/2026
+# Estado da entrega parcial — 12/11/2026
 
-## Implementado e verificado
+## Funcionalidades implementadas
 
-- Entidades e DAOs de todo o diagrama, incluindo relacionamentos e herança JOINED.
-- Portal com painel, cadastro de clientes e aeronaves, abertura, pesquisa e detalhes de solicitações.
-- Transições implementadas: ABERTA → EM_ANALISE e cancelamento das situações anteriores ao encaminhamento.
-- Motivo obrigatório no cancelamento; histórico com autor, instante e transição; rejeição de reabertura de solicitação cancelada.
-- Matrícula normalizada em maiúsculas e chave auxiliar única para aeronaves ativas. Esta chave permite manter registros inativos com a mesma matrícula quando a inativação for implementada.
-- Formulários com validação e CSRF; solicitações com controle otimista de concorrência.
+Protótipo MVC com Thymeleaf, controllers, services, entidades e persistência JPA. Fluxo da solicitação: abertura, análise, complementação, orçamento versionado, aprovação/recusa, encaminhamento e confirmação; cancelamento antes de encaminhamento e histórico com autoria.
 
-## Evidência de validação
+Incremento de 12/11: login/logout, senhas BCrypt, três perfis reais, isolamento de dados por cliente (incluindo pesquisa e indicadores), mudança de senha, edição e inativação de clientes/aeronaves, justificativa de vínculo, triagem interna e um anexo persistido no banco por solicitação. PDF/PNG/JPEG até 5 MB, com download autenticado e substituição do arquivo atual. O proprietário é preservado na edição da aeronave.
 
-- `gradlew test bootJar`: passou, quatro testes automatizados sem falhas (um de contexto e três de integração).
-- Integração: criação e leitura de entidades, herança/relacionamentos, validação de entrada, matrícula duplicada, filtros, cancelamento, histórico e rejeição de POST sem CSRF.
-- Navegador Microsoft Edge via Playwright: cadastro de cliente e aeronave, abertura, análise, cancelamento, leitura do histórico após recarregar e filtro por matrícula/situação. Sem erros JavaScript.
-- Inspeção visual em 1440 px e 390 px. A página não transborda horizontalmente; tabelas possuem rolagem própria.
-- Execução real com JDK 17 e banco H2 em arquivo. Cliente fictício preservado após reinicialização da aplicação.
-- Capturas locais em `build/verification/` (não versionadas).
+## Verificação
 
-## Limites da entrega
+- `gradlew test bootJar`: 14 testes aprovados (13 integração e 1 contexto).
+- Login real, logout, conta inativa, senha pessoal e senhas iniciais com hash.
+- URLs e operações de outro cliente negadas; contas/perfis não executam ações alheias.
+- Fluxo completo com gestor, cliente e responsável reais, incluindo histórico, versões e validações de datas/valores.
+- Edição/inativação/reativação, matrícula duplicada e manutenção do proprietário.
+- Upload e download autorizados; rejeição de arquivo vazio, formato inválido, tamanho excessivo e acesso de outro cliente.
+- Navegador Edge/Playwright com três sessões reais: abertura, upload/download, triagem, complemento, orçamento, aprovação, encaminhamento, confirmação e logout. Sem erros JavaScript. Conferida largura de celular sem transbordamento da página.
+- Capturas locais em `sgma/build/verification/`, ignoradas pelo Git.
 
-- MySQL configurado, mas ainda não validado nesta máquina, que não possui serviço MySQL disponível.
-- Não há login/perfis: é uma demonstração local. O autor da abertura é o cliente vinculado à aeronave; as ações administrativas usam o operador local. Atribuição de histórico não representa autenticação.
-- Encaminhamento e confirmação implementados. Orçamentos agora têm envio, revisão e decisão. Os testes de persistência dessas entidades não demonstram o ciclo de negócio completo.
-- Sem anexos, edição/inativação de cadastros, exportação ou notificações.
+## Como apresentar
 
-## Próximas etapas sugeridas
+Siga o roteiro e as credenciais de demonstração no README da raiz. Contas conhecidas são exclusivas dos perfis demo/test. Cadastros antigos sem senha podem ser habilitados pelo gestor em Clientes → Editar. As ações novas registram o usuário autenticado; eventos antigos simulados permanecem intactos.
 
-1. Validar o banco MySQL usado pelo grupo e confirmar o critério da entrega com o professor.
-2. Validar os orçamentos com o grupo; envio, versões, validade e decisão implementados.
-3. Revisar com o grupo o fluxo completo, incluindo encaminhamento e confirmação já implementados.
-4. Adicionar autenticação e autorização por perfil e propriedade dos registros.
+## Limitações e próximos cuidados
 
-Os arquivos gerados de `build/` foram retirados do índice do Git e continuam disponíveis localmente. O `.gitignore` evita versionar builds, bancos locais e arquivos de IDE.
-
-## Incremento: complementos
-
-Perguntas e respostas disponíveis na ficha, com transições EM_ANALISE → AGUARDANDO_INFORMACAO → EM_ANALISE, datas e autoria no histórico. Apenas uma pergunta pendente por solicitação. Respostas repetidas, de outra solicitação ou posteriores ao cancelamento são rejeitadas. O modo local simula o cliente vinculado; autenticação permanece pendente.
-
-Dois testes de integração adicionais cobrem o ciclo, múltiplas rodadas, histórico/autoria, campos vazios ou longos, CSRF, duplicidade e vínculos incorretos.
-
-## Incremento: orçamentos
-
-Envio durante análise, revisão preservando versões e decisão da versão vigente dentro da validade. Aprovação leva a APROVADA e recusa a RECUSADA. Validação de valor positivo, precisão monetária e validade. Histórico com autor, versão e transição. Dois testes adicionais cobrem envio, revisão, aprovação, recusa, vencimento, versões antigas e entrada inválida.
-
-## Incremento: encaminhamento e confirmação
-
-APROVADA → ENCAMINHADA exige descrição; ENCAMINHADA → CONCLUIDA exige data de realização e aceita referência opcional. Data deve estar entre encaminhamento e hoje. Histórico com autor e instante em cada etapa. Cancelamento bloqueado após encaminhamento; confirmação duplicada e reabertura rejeitadas. Responsável local criado automaticamente para a demonstração sem login. Dois testes adicionais cobrem o ciclo final, persistência, histórico, estados incorretos e validação de datas.
+- A validação realizada usou H2; MySQL e deploy continuam pendentes de verificação no ambiente do grupo.
+- Sem recuperação de senha por e-mail, antivírus, múltiplos anexos, histórico de arquivos, transferência de proprietário, exportação ou notificações.
+- Criação inicial de gestores/responsáveis por variáveis de ambiente; não há tela administrativa para esses perfis.
+- Diagramas originais permanecem como referência; revisar a representação do anexo e os nomes de pacote.
+- Conferir o conjunto final de funcionalidades com o documento completo de requisitos, que ainda não foi fornecido nesta conversa.

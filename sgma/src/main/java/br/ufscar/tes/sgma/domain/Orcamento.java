@@ -52,7 +52,10 @@ public class Orcamento extends Entidade {
       GestorSolicitacoes elaborador) {
     if (descricao == null || descricao.isBlank() || descricao.length() > 2000)
       throw new IllegalArgumentException("Informe a descrição do orçamento, até 2000 caracteres.");
-    if (valor == null || valor.signum() <= 0 || valor.scale() > 2 || valor.compareTo(new BigDecimal("9999999999.99")) > 0)
+    if (valor == null
+        || valor.signum() <= 0
+        || valor.scale() > 2
+        || valor.compareTo(new BigDecimal("9999999999.99")) > 0)
       throw new IllegalArgumentException("Informe um valor positivo com até duas casas decimais.");
     if (validade == null || validade.isBefore(LocalDate.now()))
       throw new IllegalArgumentException("A validade não pode ser anterior a hoje.");
@@ -93,8 +96,13 @@ public class Orcamento extends Entidade {
     return solicitacao;
   }
 
-  public boolean isVencido() { return estaVencido(LocalDate.now()); }
-  public boolean isDisponivelParaDecisao() { return podeSerDecidido(LocalDate.now()); }
+  public boolean isVencido() {
+    return estaVencido(LocalDate.now());
+  }
+
+  public boolean isDisponivelParaDecisao() {
+    return podeSerDecidido(LocalDate.now());
+  }
 
   public int getVersao() {
     return versao;

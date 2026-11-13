@@ -1,94 +1,128 @@
 # SGMA — Gestão de serviços aeronáuticos
 
-Projeto acadêmico de Tópicos em Engenharia de Software / UFSCar. Implementação em Java 17, Spring Boot, Spring Data JPA, Thymeleaf e Gradle.
+Protótipo acadêmico de Tópicos em Engenharia de Software / UFSCar. Java 17, Spring Boot, Spring MVC, Thymeleaf, Spring Data JPA e Gradle.
 
-## Entrega parcial implementada
+## Abrir neste computador
 
-- Entidades JPA e DAOs do diagrama, com herança `JOINED` para usuários.
-- Cadastro de clientes e aeronaves; matrícula única entre aeronaves ativas.
-- Abertura e pesquisa de solicitações por cliente, matrícula, descrição e situação, com paginação.
-- Ficha da solicitação, início de análise e cancelamento com motivo.
-- Complementos: pergunta do gestor, resposta simulada do cliente e retorno automático à análise, com histórico.
-- Histórico persistido com autor, data e situações anterior/nova; controle de concorrência otimista na solicitação.
-- Painel com contagens reais e interface responsiva em português.
-- Testes de integração de persistência, formulários, filtros e transições.
+Na raiz do repositório, execute no PowerShell:
 
-**Escopo:** portal local sem autenticação ou autorização por perfil. O operador local identifica as ações administrativas no histórico; a abertura é atribuída ao cliente da aeronave como parte da simulação. Isso não comprova identidade. O servidor escuta somente em `127.0.0.1` por padrão. Não expor esta versão como serviço público.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\sgma\iniciar-demo.ps1
+```
 
-Orçamentos possuem envio, revisão com versionamento e aprovação/recusa da versão vigente dentro da validade. Encaminhamento e confirmação de realização também estão disponíveis, concluindo o fluxo. Também ficam para próximas entregas: login/perfis, anexos, edição/inativação dos cadastros e exportação. As senhas de usuários são marcadores sem login, não credenciais utilizáveis.
+Espere `Started SgmaApplication` e abra **http://localhost:8081**. Mantenha o terminal aberto; `Ctrl+C` encerra a aplicação. O script procura um JDK 17 em `JAVA_HOME` ou em `%LOCALAPPDATA%\sgma-tools`. Para outra porta, acrescente `-Porta 8082`.
 
-## Abrir rapidamente sem MySQL
-
-Pré-requisito: **JDK 17** (incluindo `javac`) e acesso à internet na primeira execução. Não é necessário instalar Gradle.
-
-No PowerShell, na pasta do repositório:
+Em outro computador, instale o JDK 17 e execute:
 
 ```powershell
 cd sgma
-# Se necessário, ajuste o caminho para sua instalação:
 $env:JAVA_HOME = 'C:\caminho\do\jdk-17'
 .\gradlew.bat bootRun --args='--spring.profiles.active=demo'
 ```
 
-Abra **http://localhost:8081**. O perfil `demo` usa H2 em arquivo, em `sgma/data/`, e preserva os dados entre reinicializações. Não utiliza o MySQL. Para encerrar, pressione `Ctrl+C`.
+A primeira execução precisa de internet para baixar dependências. Não é necessário instalar Gradle. O perfil `demo` usa H2 em arquivo (`sgma/data/`) e preserva dados entre reinicializações.
 
-Também está disponível `powershell -ExecutionPolicy Bypass -File .\sgma\iniciar-demo.ps1`, a partir da raiz. O script procura o JDK local em `%LOCALAPPDATA%\sgma-tools` se `JAVA_HOME` estiver vazio; esse JDK não é incluído no Git. A opção `-Porta 8082` permite usar outra porta.
+## Contas de demonstração
 
-## Executar com MySQL
+Disponíveis **somente nos perfis demo e test**, criadas na primeira inicialização:
 
-Instale/inicie o MySQL e configure uma conta com permissão para criar/atualizar as tabelas do banco `sgma`. A URL padrão tenta criar o banco caso ele ainda não exista; se a conta não tiver essa permissão, crie o banco previamente.
+| Perfil | E-mail | Senha inicial |
+|---|---|---|
+| Gestor | operador@sgma.invalid | Gestor123! |
+| Cliente | cliente@sgma.invalid | Cliente123! |
+| Responsável pela confirmação | confirmacao@sgma.invalid | Responsavel123! |
 
-Na pasta `sgma`:
+A aeronave `PT-LOGIN` pertence ao cliente de demonstração. São dados fictícios. Não use as contas públicas de demonstração em uma instalação de produção.
+
+A senha pode ser alterada em **Minha conta**. Reiniciar não redefine senhas ou reativa contas. Contas antigas com o marcador `!SEM_LOGIN` recebem senha somente quando correspondem às contas iniciais configuradas. Para habilitar os demais clientes antigos, o gestor deve abrir **Clientes → Editar** e definir uma senha.
+
+## Permissões
+
+| Operação | Cliente | Gestor | Responsável |
+|---|---|---|---|
+| Consultar painel, aeronaves, solicitações e anexos | Apenas seus registros | Todos | Todos |
+| Criar/editar/inativar clientes e aeronaves | — | Sim | — |
+| Abrir solicitação | Própria aeronave ativa | — | — |
+| Analisar, registrar triagem e pedir complemento | — | Sim | — |
+| Responder complemento | Própria solicitação | — | — |
+| Enviar/revisar orçamento | — | Sim | — |
+| Aprovar/recusar orçamento | Própria solicitação | — | — |
+| Cancelar antes do encaminhamento | Própria solicitação | Sim | — |
+| Anexar/substituir arquivo antes do encaminhamento ou encerramento | Própria solicitação | Sim | — |
+| Encaminhar serviço aprovado | — | Sim | — |
+| Confirmar realização | — | — | Sim |
+
+As verificações acontecem no servidor, inclusive por URL direta. Clientes inativos são impedidos de entrar e de continuar usando sessões abertas. Senhas são armazenadas com BCrypt e os formulários possuem proteção CSRF. Observações de triagem são internas e não aparecem para o cliente.
+
+## Funcionalidades
+
+- Entidades JPA e DAOs, com herança `JOINED` para usuários.
+- Cadastro e edição de clientes, senha inicial/redefinição pelo gestor e inativação/reativação.
+- Cadastro e edição de aeronaves, justificativa opcional do vínculo, inativação/reativação e matrícula única entre aeronaves ativas.
+- O proprietário da aeronave é preservado na edição para manter consistência com o histórico. Transferência de proprietário não faz parte desta entrega.
+- Abertura, pesquisa com filtros e paginação, análise, triagem e cancelamento justificado.
+- Perguntas/respostas de complementação, permitindo novas rodadas após a resposta.
+- Orçamentos com valor positivo, validade inclusiva, versões preservadas, revisão e decisão da versão vigente.
+- Encaminhamento e confirmação única, com realização entre a data do encaminhamento e hoje.
+- Um anexo PDF, PNG ou JPEG de até 5 MB por solicitação. Enviar outro substitui o arquivo atual. Dados armazenados no banco, download autenticado como arquivo, validação de extensão e assinatura inicial. Não há antivírus integrado.
+- Histórico persistido de mudanças com autor autenticado e data. Registros antigos gerados na fase de simulação são preservados.
+- Painel com contagens conforme o perfil e interface responsiva.
+
+## Roteiro de apresentação
+
+Use navegadores diferentes ou contextos separados para os três perfis. Também é possível usar **Sair** e entrar com outro usuário a cada etapa.
+
+1. **Gestor:** cadastre um cliente com senha inicial e uma aeronave vinculada. Ou use o cliente e a aeronave de demonstração.
+2. **Cliente:** abra uma solicitação e envie um anexo opcional pela ficha.
+3. **Gestor:** inicie a análise, registre a triagem e solicite um complemento.
+4. **Cliente:** responda. A solicitação volta para análise.
+5. **Gestor:** envie um orçamento. Opcionalmente, inicie revisão e envie outra versão.
+6. **Cliente:** aprove o orçamento vigente dentro da validade (ou recuse para demonstrar o encerramento por recusa).
+7. **Gestor:** registre o encaminhamento. Cancelamento deixa de ser permitido.
+8. **Responsável:** informe a data da realização e uma referência opcional. Confirme.
+9. Confira a situação **Concluída**, os detalhes e o histórico com os autores reais.
+10. Demonstre o isolamento: o cliente não acessa solicitações ou anexos de outro cliente. Inative uma aeronave e verifique que ela não aparece para novas solicitações.
+
+## MySQL e contas iniciais fora do modo demo
+
+O MySQL continua sendo o banco padrão. Instale/inicie o serviço e configure uma conta com permissão para criar/atualizar tabelas do banco `sgma`. A URL padrão tenta criar o banco se ele ainda não existir.
+
+Na pasta `sgma`, configure variáveis no terminal e execute sem o perfil `demo`:
 
 ```powershell
 $env:JAVA_HOME = 'C:\caminho\do\jdk-17'
 $env:DB_USER = 'seu_usuario'
 $env:DB_PASSWORD = 'sua_senha'
-# Opcional: outra URL/banco
 $env:DB_URL = 'jdbc:mysql://localhost:3306/sgma?createDatabaseIfNotExist=true'
+$env:SGMA_GESTOR_EMAIL = 'gestor@seu-dominio.com'
+$env:SGMA_GESTOR_SENHA = 'defina-uma-senha-propria'
+$env:SGMA_RESPONSAVEL_EMAIL = 'responsavel@seu-dominio.com'
+$env:SGMA_RESPONSAVEL_SENHA = 'defina-outra-senha-propria'
 .\gradlew.bat bootRun
 ```
 
-Não grave senhas no repositório. O esquema usa `ddl-auto=update`, adequado a esta etapa de desenvolvimento. O modo MySQL precisa ser validado com a instalação de cada integrante; os testes automatizados usam H2 em memória.
+O bootstrap cria essas contas se não existirem; não troca senhas já configuradas. Sem essas variáveis, nenhuma conta padrão é criada fora de `demo`/`test`. O gestor cadastra os clientes pela interface. Senhas precisam de pelo menos 8 caracteres e no máximo 72 bytes UTF-8. Não grave senhas reais no Git.
 
-## Roteiro da apresentação
+O servidor escuta em `127.0.0.1` por padrão. `SERVER_ADDRESS` e `PORT` permitem ajustar o endereço e a porta para o ambiente de execução. Banco e implantação precisam de validação própria; esta implementação foi testada com H2. Não houve deploy. O esquema usa `ddl-auto=update`, próprio desta etapa de desenvolvimento.
 
-1. Abra **Clientes** e cadastre um cliente fictício.
-2. Em **Aeronaves**, cadastre uma matrícula e selecione o cliente.
-3. Em **Solicitações → Nova solicitação**, selecione aeronave, tipo e descrição.
-4. Confira a ficha e o evento de abertura no histórico.
-5. Clique em **Iniciar análise** e confira o novo evento e os indicadores no painel.
-6. Na ficha em análise, preencha **Pergunta ao cliente** e clique em **Solicitar complemento**. Em **Complementos de informação**, envie uma resposta. Confira o retorno para análise e os novos eventos no histórico. É possível repetir o ciclo.
-7. Pesquise a solicitação por matrícula e situação.
-8. Na ficha, expanda **Cancelar solicitação**, informe o motivo e confirme. O histórico será preservado e novas ações não estarão disponíveis.
+## Testes e pacote
 
-O banco inicia sem dados de clientes/aeronaves. O operador e o responsável pela confirmação locais são criados automaticamente, sem duplicação a cada início.
-
-## Testar e empacotar
-
-Na pasta `sgma`, com `JAVA_HOME` apontando para o JDK 17:
+Na pasta `sgma`, com o JDK configurado:
 
 ```powershell
 .\gradlew.bat test bootJar
 ```
 
-Os testes usam perfil `test` com H2 em memória e não acessam o banco da demonstração. Relatório: `sgma/build/reports/tests/test/index.html`. JAR executável: `sgma/build/libs/sgma-0.0.1-SNAPSHOT.jar`.
+São **14 testes** (13 de integração e um de contexto), com H2 em memória. Cobrem login/logout, inativação, mudança de senha, isolamento por cliente, permissões por ação, cadastros, anexos, validações e o fluxo completo. Não acessam os dados locais da demonstração.
 
-## Organização
+Relatório: `sgma/build/reports/tests/test/index.html`. JAR: `sgma/build/libs/sgma-0.0.1-SNAPSHOT.jar`.
 
-- `sgma/src/main/java/br/ufscar/tes/sgma/domain`: entidades e enums.
-- `dao`: interfaces Spring Data (`CrudRepository`), conforme o tutorial.
-- `service`: cadastros, validações e operações da solicitação.
-- `controller`: páginas e tratamento dos formulários.
-- `sgma/src/main/resources/templates` e `static/css`: interface Thymeleaf.
-- `sgma/docs`: diagramas originais de referência. Seus pacotes ainda usam o nome abreviado anterior; o código usa `br.ufscar.tes.sgma.domain`.
+## Organização e limites
 
-O passo 6 do tutorial foi adaptado: em vez de inserir dados de negócio a cada inicialização, a demonstração ocorre pelos formulários e pelos testes. Arquivos de build e bancos locais são ignorados pelo Git.
+- `domain`: entidades e operações de domínio; `dao`: interfaces Spring Data.
+- `service`: regras, autorização, contas e anexos.
+- `controller`: páginas, formulários e downloads; `config`: segurança e contas iniciais.
+- `resources/templates` e `static/css`: interface Thymeleaf.
+- `sgma/docs`: diagramas originais e estado da entrega. Os diagramas originais ainda não refletem a entidade técnica `Anexo` nem os nomes completos de pacotes.
 
-## Testar orçamentos
-
-Na ficha em análise, preencha descrição, valor e validade em **Orçamentos**. Envie e escolha **Aprovar orçamento**, **Recusar orçamento** ou **Iniciar revisão**. A revisão volta para análise, invalida a versão anterior e permite enviar a próxima versão sem apagar o histórico. Validade inclui o dia informado. Orçamento vencido exige revisão antes de uma decisão. Valores devem ser positivos com até duas casas decimais. A decisão ainda simula o cliente vinculado, sem login. Após aprovação, use o encaminhamento e a confirmação para finalizar.
-
-## Encaminhar e concluir
-
-Em uma solicitação **Aprovada**, descreva o destino/encaminhamento e clique em **Registrar encaminhamento**. A situação muda para **Encaminhada**, sem possibilidade de cancelamento. Informe a data de realização (do dia do encaminhamento até hoje), uma referência opcional de até 500 caracteres e clique em **Confirmar realização**. A situação muda para **Concluída** e preserva o histórico, as versões do orçamento e os complementos. A confirmação é única e atribuída ao responsável local da demonstração, ainda sem autenticação.
+Fora do escopo implementado: recuperação de senha por e-mail, múltiplos anexos/histórico de arquivos, transferência de proprietário, relatórios/exportação e notificações. Não há tela para criar outros gestores/responsáveis; as contas iniciais são configuradas pelas variáveis acima. Os critérios finais devem ser conferidos com o documento completo de requisitos do grupo.

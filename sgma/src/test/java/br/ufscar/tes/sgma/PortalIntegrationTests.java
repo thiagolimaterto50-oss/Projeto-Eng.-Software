@@ -1,23 +1,30 @@
 package br.ufscar.tes.sgma;
 
-import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import br.ufscar.tes.sgma.dao.*;
 import br.ufscar.tes.sgma.domain.*;
 import br.ufscar.tes.sgma.service.*;
-import java.math.BigDecimal;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.LocalDate;
-import java.util.UUID;
-import org.junit.jupiter.api.Test;
+import java.util.*;
+import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.*;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -26,329 +33,514 @@ import org.springframework.transaction.support.TransactionTemplate;
 @ActiveProfiles("test")
 class PortalIntegrationTests {
   @Autowired MockMvc mvc;
-  @Autowired CadastroService cadastro;
-  @Autowired SolicitacaoService servico;
+  @Autowired IUsuarioDAO usuarios;
+  @Autowired IClienteDAO clientes;
+  @Autowired IAeronaveDAO aeronaves;
   @Autowired ISolicitacaoDAO solicitacoes;
-  @Autowired IOrcamentoDAO orcamentos;
   @Autowired IComplementoDAO complementos;
-  @Autowired IConfirmacaoDAO confirmacoes;
-  @Autowired IResponsavelConfirmacaoDAO responsaveis;
-  @Autowired IGestorSolicitacoesDAO gestores;
+  @Autowired IOrcamentoDAO orcamentos;
+  @Autowired IAnexoDAO anexos;
+  @Autowired PasswordEncoder encoder;
+  @Autowired SolicitacaoService service;
   @Autowired PlatformTransactionManager transactions;
+  @PersistenceContext EntityManager em;
+  Cliente cliente, outro;
+  GestorSolicitacoes gestor;
+  ResponsavelConfirmacao responsavel;
+  Aeronave aeronave, aeronaveOutro;
+  final String senha = "SenhaTeste123!";
 
-  private Aeronave aeronave() {
+  @BeforeEach
+  void dados() {
     String chave = UUID.randomUUID().toString().substring(0, 8);
-    Cliente cliente =
-        cadastro.cadastrarCliente(
-            new CadastroService.ClienteForm(
-                "Cliente " + chave, chave + "@exemplo.com", chave, "11999999999"));
-    return cadastro.cadastrarAeronave(
-        new CadastroService.AeronaveForm(
-            "PT-" + chave, "Embraer", "Modelo de teste", cliente.getId()));
-  }
-
-  private Long complementoPendente(Long id) {
-    return new TransactionTemplate(transactions).execute(tx -> solicitacoes.findById(id)
-        .orElseThrow().getComplementos().stream().filter(c -> c.getResposta() == null)
-        .findFirst().orElseThrow().getId());
-  }
-
-  private Long orcamentoAtual(Long id) {
-    return new TransactionTemplate(transactions).execute(tx -> solicitacoes.findById(id).orElseThrow().getOrcamentoVigente().getId());
-  }
-
-  @Test
-  void orcamentosVersionadosRevisaoEAprovacaoMantemHistorico() throws Exception {
-    Long id = servico.abrir(new SolicitacaoService.AberturaForm(aeronave().getId(), TipoServico.REPARO, "Reparo")).getId();
-    servico.iniciarAnalise(id);
-    String url = "/solicitacoes/" + id;
-    mvc.perform(post(url + "/orcamentos").with(csrf()).param("descricaoServico", "Reparo inicial")
-        .param("valorTotal", "1500.50").param("dataValidade", LocalDate.now().toString()))
-        .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("sucesso"));
-    Long antigo = orcamentoAtual(id);
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("1.500,50")));
-    mvc.perform(post(url + "/orcamentos/" + antigo + "/revisar").with(csrf()))
-        .andExpect(flash().attributeExists("sucesso"));
-    assertFalse(orcamentos.findById(antigo).orElseThrow().isVigente());
-    servico.enviarOrcamento(id, new SolicitacaoService.OrcamentoForm("Reparo revisado", new BigDecimal("1200.00"), LocalDate.now().plusDays(2)));
-    Long novo = orcamentoAtual(id);
-    assertThrows(IllegalArgumentException.class, () -> servico.decidirOrcamento(id, antigo, new SolicitacaoService.DecisaoForm(DecisaoOrcamento.APROVADO)));
-    mvc.perform(post(url + "/orcamentos/" + novo + "/decidir").with(csrf()).param("decisao", "APROVADO"))
-        .andExpect(flash().attributeExists("sucesso"));
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("Reparo revisado")));
-    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-      var s = solicitacoes.findById(id).orElseThrow();
-      assertEquals(SituacaoSolicitacao.APROVADA, s.getSituacao());
-      assertEquals(2, s.getOrcamentos().size());
-      assertEquals(2, s.getOrcamentoVigente().getVersao());
-      assertEquals(s.getCliente().getId(), s.getOrcamentoVigente().getDecisor().getId());
-      assertEquals(6, s.getHistorico().size());
-    });
-    assertThrows(IllegalStateException.class, () -> servico.iniciarRevisao(id, novo));
-    assertThrows(IllegalStateException.class, () -> servico.decidirOrcamento(id, novo, new SolicitacaoService.DecisaoForm(DecisaoOrcamento.RECUSADO)));
-  }
-
-  @Test
-  void orcamentosRecusamDadosInvalidosVencimentoEVinculosIncorretos() throws Exception {
-    var form = new SolicitacaoService.OrcamentoForm("Serviço", new BigDecimal("50.00"), LocalDate.now());
-    Long id = servico.abrir(new SolicitacaoService.AberturaForm(aeronave().getId(), TipoServico.OUTRO, "Teste")).getId();
-    assertThrows(IllegalStateException.class, () -> servico.enviarOrcamento(id, form));
-    servico.iniciarAnalise(id);
-    String url = "/solicitacoes/" + id;
-    for (String valor : new String[]{"-1", "0", "1.234", "10000000000", "abc"}) {
-      mvc.perform(post(url + "/orcamentos").with(csrf()).param("descricaoServico", "Serviço")
-          .param("valorTotal", valor).param("dataValidade", LocalDate.now().toString()))
-          .andExpect(flash().attributeExists("erro"));
+    String hash = encoder.encode(senha);
+    cliente = new Cliente("Cliente " + chave, chave + "@cliente.test", chave, "123");
+    outro = new Cliente("Outro " + chave, chave + "@outro.test", chave + "B", "123");
+    gestor = new GestorSolicitacoes("Gestor " + chave, chave + "@gestor.test");
+    responsavel = new ResponsavelConfirmacao("Responsável " + chave, chave + "@responsavel.test");
+    for (Usuario u : List.of(cliente, outro, gestor, responsavel)) {
+      u.definirSenhaHash(hash);
+      usuarios.save(u);
     }
-    mvc.perform(post(url + "/orcamentos").with(csrf()).param("descricaoServico", "Serviço")
-        .param("valorTotal", "50").param("dataValidade", LocalDate.now().minusDays(1).toString()))
-        .andExpect(flash().attributeExists("erro"));
-    servico.enviarOrcamento(id, form);
-    Long oid = orcamentoAtual(id);
-    assertThrows(IllegalArgumentException.class, () -> servico.decidirOrcamento(id, oid + 9999, new SolicitacaoService.DecisaoForm(DecisaoOrcamento.APROVADO)));
-    assertThrows(IllegalArgumentException.class, () -> servico.decidirOrcamento(id, oid, new SolicitacaoService.DecisaoForm(DecisaoOrcamento.PENDENTE)));
-    // Simula a passagem de um dia no banco sem depender do relógio do teste.
-    new TransactionTemplate(transactions).executeWithoutResult(tx -> entityManager.createQuery("update Orcamento o set o.dataValidade = :data where o.id = :id")
-        .setParameter("data", LocalDate.now().minusDays(1)).setParameter("id", oid).executeUpdate());
-    assertThrows(IllegalStateException.class, () -> servico.decidirOrcamento(id, oid, new SolicitacaoService.DecisaoForm(DecisaoOrcamento.APROVADO)));
-    servico.iniciarRevisao(id, oid);
-    servico.enviarOrcamento(id, form);
-    Long atual = orcamentoAtual(id);
-    mvc.perform(post(url + "/orcamentos/" + atual + "/decidir").with(csrf()).param("decisao", "RECUSADO"))
-        .andExpect(flash().attributeExists("sucesso"));
-    assertEquals(SituacaoSolicitacao.RECUSADA, solicitacoes.findById(id).orElseThrow().getSituacao());
-    assertThrows(IllegalStateException.class, () -> servico.cancelar(id, new SolicitacaoService.CancelamentoForm("Teste")));
+    aeronave = aeronaves.save(new Aeronave("PT-" + chave, "Embraer", "Modelo", cliente));
+    aeronaveOutro = aeronaves.save(new Aeronave("PR-" + chave, "Embraer", "Modelo", outro));
   }
 
-  @jakarta.persistence.PersistenceContext jakarta.persistence.EntityManager entityManager;
+  @AfterEach
+  void limparSessao() {
+    SecurityContextHolder.clearContext();
+  }
 
-  private Long solicitacaoAprovada() {
-    Long id = servico.abrir(new SolicitacaoService.AberturaForm(aeronave().getId(), TipoServico.REPARO, "Reparo completo")).getId();
-    servico.iniciarAnalise(id);
-    servico.enviarOrcamento(id, new SolicitacaoService.OrcamentoForm("Reparo", new BigDecimal("100.00"), LocalDate.now()));
-    servico.decidirOrcamento(id, orcamentoAtual(id), new SolicitacaoService.DecisaoForm(DecisaoOrcamento.APROVADO));
+  ResultActions como(Usuario u, AbstractMockHttpServletRequestBuilder<?> req) throws Exception {
+    return mvc.perform(req.with(user(u.getEmail()).roles(u.getPerfil())).with(csrf()));
+  }
+
+  void ok(Usuario u, AbstractMockHttpServletRequestBuilder<?> req) throws Exception {
+    como(u, req)
+        .andExpect(status().is3xxRedirection())
+        .andExpect(flash().attributeExists("sucesso"));
+  }
+
+  Long abrir(Cliente c, Aeronave a) throws Exception {
+    String url =
+        como(
+                c,
+                post("/solicitacoes")
+                    .param("aeronaveId", a.getId().toString())
+                    .param("tipoServico", "REPARO")
+                    .param("descricao", "Reparo de teste"))
+            .andExpect(flash().attributeExists("sucesso"))
+            .andReturn()
+            .getResponse()
+            .getRedirectedUrl();
+    return Long.valueOf(url.substring(url.lastIndexOf('/') + 1));
+  }
+
+  String url(Long id) {
+    return "/solicitacoes/" + id;
+  }
+
+  Long vigente(Long id) {
+    return new TransactionTemplate(transactions)
+        .execute(tx -> solicitacoes.findById(id).orElseThrow().getOrcamentoVigente().getId());
+  }
+
+  Long pendente(Long id) {
+    return new TransactionTemplate(transactions)
+        .execute(
+            tx ->
+                solicitacoes.findById(id).orElseThrow().getComplementos().stream()
+                    .filter(c -> c.getResposta() == null)
+                    .findFirst()
+                    .orElseThrow()
+                    .getId());
+  }
+
+  void enviar(Long id, String valor) throws Exception {
+    ok(
+        gestor,
+        post(url(id) + "/orcamentos")
+            .param("descricaoServico", "Reparo")
+            .param("valorTotal", valor)
+            .param("dataValidade", LocalDate.now().toString()));
+  }
+
+  Long aprovada() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    ok(gestor, post(url(id) + "/analisar"));
+    enviar(id, "150.50");
+    ok(
+        cliente,
+        post(url(id) + "/orcamentos/" + vigente(id) + "/decidir").param("decisao", "APROVADO"));
     return id;
   }
 
   @Test
-  void encaminhamentoEConfirmacaoConcluemFluxoComHistorico() throws Exception {
-    Long id = solicitacaoAprovada();
-    String url = "/solicitacoes/" + id;
-    mvc.perform(post(url + "/encaminhar").with(csrf()).param("descricao", "Enviado à oficina para execução."))
-        .andExpect(flash().attributeExists("sucesso"));
-    assertEquals(SituacaoSolicitacao.ENCAMINHADA, solicitacoes.findById(id).orElseThrow().getSituacao());
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("Confirmar realização")));
-    assertThrows(IllegalStateException.class, () -> servico.cancelar(id, new SolicitacaoService.CancelamentoForm("Tentativa")));
-    mvc.perform(post(url + "/confirmar").with(csrf()).param("dataRealizacao", LocalDate.now().toString()).param("referencia", "OS-123"))
-        .andExpect(flash().attributeExists("sucesso"));
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("OS-123")));
-    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-      var s = solicitacoes.findById(id).orElseThrow();
-      assertEquals(SituacaoSolicitacao.CONCLUIDA, s.getSituacao());
-      assertEquals("Enviado à oficina para execução.", s.getDescricaoEncaminhamento());
-      assertNotNull(s.getDataHoraEncaminhamento());
-      assertEquals(LocalDate.now(), s.getConfirmacao().getDataRealizacaoInformada());
-      assertNotNull(s.getConfirmacao().getDataHoraRegistro());
-      assertEquals(6, s.getHistorico().size());
-      assertEquals(s.getConfirmacao().getResponsavel().getId(), s.getHistorico().get(5).getAutor().getId());
-    });
-    assertThrows(IllegalStateException.class, () -> servico.confirmar(id, new SolicitacaoService.ConfirmacaoForm(LocalDate.now(), null)));
-    assertThrows(IllegalStateException.class, () -> servico.encaminhar(id, new SolicitacaoService.EncaminhamentoForm("Reenvio")));
-    assertThrows(IllegalStateException.class, () -> servico.cancelar(id, new SolicitacaoService.CancelamentoForm("Tentativa")));
+  void loginLogoutSenhaEContaInativa() throws Exception {
+    mvc.perform(get("/")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/login"));
+    mvc.perform(
+            post("/login")
+                .with(csrf())
+                .param("username", cliente.getEmail())
+                .param("password", "errada"))
+        .andExpect(redirectedUrl("/login?error"));
+    var session =
+        (org.springframework.mock.web.MockHttpSession)
+            mvc.perform(
+                    post("/login")
+                        .with(csrf())
+                        .param("username", cliente.getEmail())
+                        .param("password", senha))
+                .andExpect(redirectedUrl("/"))
+                .andReturn()
+                .getRequest()
+                .getSession(false);
+    mvc.perform(get("/").session(session)).andExpect(status().isOk());
+    mvc.perform(post("/logout").session(session).with(csrf()))
+        .andExpect(redirectedUrl("/login?logout"));
+    assertTrue(session.isInvalid());
+    cliente.atualizar(cliente.getNome(), cliente.getEmail(), cliente.getDocumento(), "", false);
+    clientes.save(cliente);
+    mvc.perform(
+            post("/login")
+                .with(csrf())
+                .param("username", cliente.getEmail())
+                .param("password", senha))
+        .andExpect(redirectedUrl("/login?error"));
+    como(cliente, get("/")).andExpect(status().isForbidden());
   }
 
   @Test
-  void finalizacaoRejeitaEtapasIncorretasEDatasInvalidas() throws Exception {
-    Long aberta = servico.abrir(new SolicitacaoService.AberturaForm(aeronave().getId(), TipoServico.OUTRO, "Teste")).getId();
-    assertThrows(IllegalStateException.class, () -> servico.encaminhar(aberta, new SolicitacaoService.EncaminhamentoForm("Oficina")));
-    Long id = solicitacaoAprovada();
-    String url = "/solicitacoes/" + id;
-    assertThrows(IllegalStateException.class, () -> servico.confirmar(id, new SolicitacaoService.ConfirmacaoForm(LocalDate.now(), null)));
-    for (String descricao : new String[]{" ", "x".repeat(2001)})
-      mvc.perform(post(url + "/encaminhar").with(csrf()).param("descricao", descricao))
-          .andExpect(flash().attributeExists("erro"));
-    mvc.perform(post(url + "/encaminhar").param("descricao", "Oficina")).andExpect(status().isForbidden());
-    servico.encaminhar(id, new SolicitacaoService.EncaminhamentoForm("Oficina"));
-    for (String data : new String[]{"", "invalida", LocalDate.now().plusDays(1).toString(), LocalDate.now().minusDays(1).toString()})
-      mvc.perform(post(url + "/confirmar").with(csrf()).param("dataRealizacao", data))
-          .andExpect(flash().attributeExists("erro"));
-    mvc.perform(post(url + "/confirmar").with(csrf()).param("dataRealizacao", LocalDate.now().toString()).param("referencia", "x".repeat(501)))
-        .andExpect(flash().attributeExists("erro"));
-    assertEquals(SituacaoSolicitacao.ENCAMINHADA, solicitacoes.findById(id).orElseThrow().getSituacao());
-    servico.confirmar(id, new SolicitacaoService.ConfirmacaoForm(LocalDate.now(), null));
-    assertEquals(SituacaoSolicitacao.CONCLUIDA, solicitacoes.findById(id).orElseThrow().getSituacao());
-  }
-
-  @Test
-  void complementosPersistemPerguntaRespostaTransicoesEAutores() throws Exception {
-    var a = aeronave();
-    Long id = servico.abrir(new SolicitacaoService.AberturaForm(a.getId(), TipoServico.INSPECAO, "Inspeção")).getId();
-    String url = "/solicitacoes/" + id;
-    servico.iniciarAnalise(id);
-    mvc.perform(post(url + "/complementos").with(csrf()).param("pergunta", "Quando ocorreu a última inspeção?"))
-        .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("sucesso"));
-    Long cid = complementoPendente(id);
-    assertEquals(SituacaoSolicitacao.AGUARDANDO_INFORMACAO, solicitacoes.findById(id).orElseThrow().getSituacao());
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("Quando ocorreu a última inspeção?")));
-    mvc.perform(post(url + "/complementos/" + cid + "/responder").with(csrf()).param("resposta", "Em outubro."))
-        .andExpect(status().is3xxRedirection()).andExpect(flash().attributeExists("sucesso"));
-    mvc.perform(get(url)).andExpect(status().isOk()).andExpect(content().string(containsString("Em outubro.")));
-    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-      var s = solicitacoes.findById(id).orElseThrow();
-      assertEquals(SituacaoSolicitacao.EM_ANALISE, s.getSituacao());
-      assertEquals(4, s.getHistorico().size());
-      assertEquals("Em outubro.", s.getComplementos().get(0).getResposta());
-      assertNotNull(s.getComplementos().get(0).getDataHoraResposta());
-      assertEquals(s.getCliente().getId(), s.getHistorico().get(3).getAutor().getId());
-      assertEquals(gestores.findFirstByOrderByIdAsc().orElseThrow().getId(), s.getHistorico().get(2).getAutor().getId());
-    });
-    servico.solicitarComplemento(id, new SolicitacaoService.PerguntaForm("Qual o total de horas?"));
-    assertThrows(IllegalStateException.class, () -> servico.responderComplemento(id, cid, new SolicitacaoService.RespostaForm("Alteração indevida")));
-    assertEquals(SituacaoSolicitacao.AGUARDANDO_INFORMACAO, solicitacoes.findById(id).orElseThrow().getSituacao());
-    servico.responderComplemento(id, complementoPendente(id), new SolicitacaoService.RespostaForm("120 horas"));
-  }
-
-  @Test
-  void complementosRejeitamEstadoInvalidoEntradaVaziaDuplicidadeEVinculoIncorreto() throws Exception {
-    var a = aeronave();
-    Long id = servico.abrir(new SolicitacaoService.AberturaForm(a.getId(), TipoServico.REPARO, "Reparo")).getId();
-    var pergunta = new SolicitacaoService.PerguntaForm("Qual o defeito?");
-    assertThrows(IllegalStateException.class, () -> servico.solicitarComplemento(id, pergunta));
-    servico.iniciarAnalise(id);
-    String url = "/solicitacoes/" + id;
-    mvc.perform(post(url + "/complementos").with(csrf()).param("pergunta", " "))
-        .andExpect(flash().attributeExists("erro"));
-    mvc.perform(post(url + "/complementos").with(csrf()).param("pergunta", "x".repeat(2001)))
-        .andExpect(flash().attributeExists("erro"));
-    mvc.perform(post(url + "/complementos").param("pergunta", "Teste")).andExpect(status().isForbidden());
-    assertEquals(SituacaoSolicitacao.EM_ANALISE, solicitacoes.findById(id).orElseThrow().getSituacao());
-    servico.solicitarComplemento(id, pergunta);
-    Long cid = complementoPendente(id);
-    assertThrows(IllegalStateException.class, () -> servico.solicitarComplemento(id, pergunta));
-    mvc.perform(post(url + "/complementos/" + cid + "/responder").with(csrf()).param("resposta", " "))
-        .andExpect(flash().attributeExists("erro"));
-    mvc.perform(post(url + "/complementos/" + cid + "/responder").with(csrf()).param("resposta", "x".repeat(2001)))
-        .andExpect(flash().attributeExists("erro"));
-    Long outroId = servico.abrir(new SolicitacaoService.AberturaForm(a.getId(), TipoServico.OUTRO, "Outra solicitação")).getId();
-    servico.iniciarAnalise(outroId);
-    servico.solicitarComplemento(outroId, pergunta);
-    assertThrows(IllegalArgumentException.class, () -> servico.responderComplemento(outroId, cid, new SolicitacaoService.RespostaForm("Resposta")));
-    servico.cancelar(id, new SolicitacaoService.CancelamentoForm("Não necessário"));
-    assertThrows(IllegalStateException.class, () -> servico.responderComplemento(id, cid, new SolicitacaoService.RespostaForm("Tardia")));
-    assertNull(complementos.findById(cid).orElseThrow().getResposta());
-  }
-
-  @Test
-  void fluxoDaAberturaAoCancelamentoPersisteHistoricoERecusaReabertura() throws Exception {
-    Aeronave a = aeronave();
-    var resposta =
-        mvc.perform(
-                post("/solicitacoes")
-                    .with(csrf())
-                    .param("aeronaveId", a.getId().toString())
-                    .param("tipoServico", "INSPECAO")
-                    .param("descricao", "Inspeção periódica do conjunto"))
-            .andExpect(status().is3xxRedirection())
-            .andReturn();
-    String url = resposta.getResponse().getRedirectedUrl();
-    Long id = Long.valueOf(url.substring(url.lastIndexOf('/') + 1));
-    mvc.perform(get(url))
+  void clienteEnxergaSomenteSeusRegistrosInclusiveContagens() throws Exception {
+    Long meu = abrir(cliente, aeronave), alheio = abrir(outro, aeronaveOutro);
+    como(cliente, get("/solicitacoes"))
         .andExpect(status().isOk())
-        .andExpect(content().string(containsString("Inspeção periódica")));
-    mvc.perform(post(url + "/analisar").with(csrf())).andExpect(status().is3xxRedirection());
-    assertEquals(
-        SituacaoSolicitacao.EM_ANALISE, solicitacoes.findById(id).orElseThrow().getSituacao());
-    mvc.perform(post(url + "/cancelar").with(csrf()).param("motivo", " "))
+        .andExpect(content().string(containsString(aeronave.getMatricula())))
+        .andExpect(content().string(not(containsString(aeronaveOutro.getMatricula()))));
+    como(cliente, get("/"))
+        .andExpect(model().attribute("total", 1L))
+        .andExpect(model().attribute("aeronavesTotal", 1));
+    como(cliente, get("/aeronaves"))
+        .andExpect(content().string(not(containsString(aeronaveOutro.getMatricula()))));
+    como(cliente, get(url(alheio))).andExpect(status().isForbidden());
+    como(cliente, post(url(alheio) + "/cancelar").param("motivo", "Teste"))
+        .andExpect(status().isForbidden());
+    como(
+            cliente,
+            post("/solicitacoes")
+                .param("aeronaveId", aeronaveOutro.getId().toString())
+                .param("tipoServico", "OUTRO")
+                .param("descricao", "Tentativa"))
+        .andExpect(status().isForbidden());
+    como(cliente, get("/clientes")).andExpect(status().isForbidden());
+    como(cliente, get("/aeronaves/" + aeronaveOutro.getId() + "/editar"))
+        .andExpect(status().isForbidden());
+    como(gestor, get(url(meu))).andExpect(status().isOk());
+  }
+
+  @Test
+  void fluxoCompletoComAutoresReaisComplementosOrcamentosEConfirmacao() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    ok(gestor, post(url(id) + "/analisar"));
+    ok(gestor, post(url(id) + "/triagem").param("observacoes", "Verificar documentação interna"));
+    como(cliente, get(url(id)))
+        .andExpect(content().string(not(containsString("Verificar documentação interna"))));
+    ok(gestor, post(url(id) + "/complementos").param("pergunta", "Última inspeção?"));
+    Long cid = pendente(id);
+    ok(
+        cliente,
+        post(url(id) + "/complementos/" + cid + "/responder").param("resposta", "Em outubro"));
+    enviar(id, "1500.50");
+    Long anterior = vigente(id);
+    ok(gestor, post(url(id) + "/orcamentos/" + anterior + "/revisar"));
+    enviar(id, "1200.00");
+    como(
+            cliente,
+            post(url(id) + "/orcamentos/" + anterior + "/decidir").param("decisao", "APROVADO"))
         .andExpect(flash().attributeExists("erro"));
-    assertEquals(
-        SituacaoSolicitacao.EM_ANALISE, solicitacoes.findById(id).orElseThrow().getSituacao());
-    mvc.perform(post(url + "/cancelar").with(csrf()).param("motivo", "Serviço não será necessário"))
-        .andExpect(status().is3xxRedirection());
-    mvc.perform(get(url))
-        .andExpect(status().isOk())
-        .andExpect(content().string(containsString("Serviço não será necessário")));
-    assertThrows(IllegalStateException.class, () -> servico.iniciarAnalise(id));
+    ok(
+        cliente,
+        post(url(id) + "/orcamentos/" + vigente(id) + "/decidir").param("decisao", "APROVADO"));
+    ok(gestor, post(url(id) + "/encaminhar").param("descricao", "Oficina responsável"));
+    ok(
+        responsavel,
+        post(url(id) + "/confirmar")
+            .param("dataRealizacao", LocalDate.now().toString())
+            .param("referencia", "OS-123"));
+    como(cliente, get(url(id))).andExpect(content().string(containsString("OS-123")));
     new TransactionTemplate(transactions)
         .executeWithoutResult(
             tx -> {
-              Solicitacao s = solicitacoes.findById(id).orElseThrow();
-              assertEquals(SituacaoSolicitacao.CANCELADA, s.getSituacao());
-              assertEquals(3, s.getHistorico().size());
-              assertEquals(s.getCliente().getId(), s.getHistorico().get(0).getAutor().getId());
-              assertEquals(
-                  SituacaoSolicitacao.EM_ANALISE, s.getHistorico().get(2).getSituacaoAnterior());
+              var s = solicitacoes.findById(id).orElseThrow();
+              assertEquals(SituacaoSolicitacao.CONCLUIDA, s.getSituacao());
+              assertEquals(2, s.getOrcamentos().size());
+              assertFalse(s.getOrcamentos().get(0).isVigente());
+              assertEquals(cliente.getId(), s.getOrcamentoVigente().getDecisor().getId());
+              assertEquals(responsavel.getId(), s.getConfirmacao().getResponsavel().getId());
+              assertEquals(gestor.getId(), s.getOrcamentoVigente().getElaborador().getId());
+              assertEquals(11, s.getHistorico().size());
+              assertEquals(cliente.getId(), s.getHistorico().get(0).getAutor().getId());
             });
   }
 
   @Test
-  void validacaoDuplicidadeFiltrosEProtecaoDosFormularios() throws Exception {
-    Aeronave a = aeronave();
-    mvc.perform(post("/clientes").param("nome", "Sem token")).andExpect(status().isForbidden());
+  void perfisNaoPodemExecutarAcoesUnsDosOutrosNemDiretoNoServico() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    como(cliente, post(url(id) + "/analisar")).andExpect(status().isForbidden());
+    como(responsavel, post(url(id) + "/analisar")).andExpect(status().isForbidden());
+    como(responsavel, post(url(id) + "/cancelar").param("motivo", "Teste"))
+        .andExpect(status().isForbidden());
+    como(
+            gestor,
+            post("/solicitacoes")
+                .param("aeronaveId", aeronave.getId().toString())
+                .param("tipoServico", "OUTRO")
+                .param("descricao", "Teste"))
+        .andExpect(status().isForbidden());
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new UsernamePasswordAuthenticationToken(cliente.getEmail(), "", List.of()));
+    assertThrows(AccessDeniedException.class, () -> service.iniciarAnalise(id));
+    SecurityContextHolder.clearContext();
+    ok(gestor, post(url(id) + "/analisar"));
+    ok(gestor, post(url(id) + "/complementos").param("pergunta", "Detalhe?"));
+    como(
+            gestor,
+            post(url(id) + "/complementos/" + pendente(id) + "/responder")
+                .param("resposta", "Teste"))
+        .andExpect(status().isForbidden());
+    ok(
+        cliente,
+        post(url(id) + "/complementos/" + pendente(id) + "/responder")
+            .param("resposta", "Resposta"));
+    enviar(id, "50");
+    como(
+            gestor,
+            post(url(id) + "/orcamentos/" + vigente(id) + "/decidir").param("decisao", "APROVADO"))
+        .andExpect(status().isForbidden());
+    ok(
+        cliente,
+        post(url(id) + "/orcamentos/" + vigente(id) + "/decidir").param("decisao", "APROVADO"));
+    como(cliente, post(url(id) + "/encaminhar").param("descricao", "Oficina"))
+        .andExpect(status().isForbidden());
+    ok(gestor, post(url(id) + "/encaminhar").param("descricao", "Oficina"));
+    como(gestor, post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void cadastroEdicaoSenhaInativacaoEReativacao() throws Exception {
+    String chave = UUID.randomUUID().toString().substring(0, 8);
+    ok(
+        gestor,
+        post("/clientes")
+            .param("nome", "Novo cliente")
+            .param("email", chave + "@novo.test")
+            .param("documento", chave)
+            .param("senha", senha));
+    var novo = usuarios.findByEmailIgnoreCase(chave + "@novo.test").orElseThrow();
+    assertTrue(encoder.matches(senha, novo.getSenhaHash()));
+    como(cliente, post("/clientes").param("nome", "Invasão")).andExpect(status().isForbidden());
+    como(gestor, get("/clientes/" + cliente.getId() + "/editar")).andExpect(status().isOk());
+    ok(
+        gestor,
+        post("/clientes/" + cliente.getId() + "/editar")
+            .param("nome", "Nome alterado")
+            .param("email", cliente.getEmail())
+            .param("documento", cliente.getDocumento())
+            .param("telefone", "987")
+            .param("senha", "NovaSenha123!"));
+    assertFalse(clientes.findById(cliente.getId()).orElseThrow().isAtivo());
+    como(cliente, get("/")).andExpect(status().isForbidden());
+    ok(
+        gestor,
+        post("/clientes/" + cliente.getId() + "/editar")
+            .param("nome", "Nome alterado")
+            .param("email", cliente.getEmail())
+            .param("documento", cliente.getDocumento())
+            .param("ativo", "true"));
     mvc.perform(
-            post("/clientes")
+            post("/login")
                 .with(csrf())
-                .param("nome", "")
-                .param("email", "invalido")
-                .param("documento", ""))
-        .andExpect(status().isOk())
+                .param("username", cliente.getEmail())
+                .param("password", "NovaSenha123!"))
+        .andExpect(redirectedUrl("/"));
+  }
+
+  @Test
+  void aeronaveEditavelInativaBloqueiaAberturaEVinculoPreservaProprietario() throws Exception {
+    como(gestor, get("/aeronaves/" + aeronave.getId() + "/editar")).andExpect(status().isOk());
+    String edit = "/aeronaves/" + aeronave.getId() + "/editar";
+    ok(
+        gestor,
+        post(edit)
+            .param("matricula", aeronave.getMatricula())
+            .param("fabricante", "Fabricante novo")
+            .param("modelo", "Modelo novo")
+            .param("clienteId", cliente.getId().toString())
+            .param("justificativaVinculo", "Documento apresentado"));
+    assertFalse(aeronaves.findById(aeronave.getId()).orElseThrow().isAtiva());
+    como(
+            cliente,
+            post("/solicitacoes")
+                .param("aeronaveId", aeronave.getId().toString())
+                .param("tipoServico", "OUTRO")
+                .param("descricao", "Teste"))
         .andExpect(model().attributeHasErrors("form"));
-    mvc.perform(
-            post("/aeronaves")
-                .with(csrf())
-                .param("matricula", a.getMatricula().toLowerCase())
+    como(
+            gestor,
+            post(edit)
+                .param("matricula", aeronave.getMatricula())
                 .param("fabricante", "Fabricante")
                 .param("modelo", "Modelo")
-                .param("clienteId", a.getCliente().getId().toString()))
-        .andExpect(status().isOk())
+                .param("clienteId", outro.getId().toString())
+                .param("ativa", "true"))
         .andExpect(model().attributeHasErrors("form"));
-    var s =
-        servico.abrir(
-            new SolicitacaoService.AberturaForm(
-                a.getId(), TipoServico.REPARO, "Reparo para pesquisa"));
-    mvc.perform(get("/solicitacoes").param("busca", a.getMatricula()).param("situacao", "ABERTA"))
-        .andExpect(status().isOk())
-        .andExpect(content().string(containsString("SG-" + s.getId())));
-    mvc.perform(
-            get("/solicitacoes").param("busca", a.getMatricula()).param("situacao", "CANCELADA"))
-        .andExpect(status().isOk())
-        .andExpect(content().string(containsString("Nenhuma solicitação encontrada")));
-    mvc.perform(get("/solicitacoes/99999999")).andExpect(status().isNotFound());
-    for (String url : new String[] {"/", "/clientes", "/aeronaves", "/solicitacoes/nova"})
-      mvc.perform(get(url)).andExpect(status().isOk());
+    ok(
+        gestor,
+        post(edit)
+            .param("matricula", aeronave.getMatricula())
+            .param("fabricante", "Fabricante")
+            .param("modelo", "Modelo")
+            .param("clienteId", cliente.getId().toString())
+            .param("ativa", "true")
+            .param("justificativaVinculo", "Documento apresentado"));
+    como(cliente, get("/aeronaves"))
+        .andExpect(content().string(containsString("Documento apresentado")));
+    abrir(cliente, aeronave);
   }
 
   @Test
-  void entidadesDasProximasEtapasPodemSerPersistidasComSeusRelacionamentos() {
-    Aeronave a = aeronave();
-    Long id =
-        servico
-            .abrir(
-                new SolicitacaoService.AberturaForm(
-                    a.getId(), TipoServico.OUTRO, "Mapeamento do domínio"))
-            .getId();
+  void anexoPersistidoDownloadProtegidoESubstituicao() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    String path = url(id) + "/anexo";
+    byte[] pdf = "%PDF-1.7 teste".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    var file = new MockMultipartFile("arquivo", "teste.pdf", "application/pdf", pdf);
+    ok(cliente, multipart(path).file(file));
+    como(cliente, get(path))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Content-Disposition", containsString("attachment")))
+        .andExpect(content().bytes(pdf));
+    como(outro, get(path)).andExpect(status().isForbidden());
+    como(outro, multipart(path).file(file)).andExpect(status().isForbidden());
+    como(responsavel, multipart(path).file(file)).andExpect(status().isForbidden());
+    ok(
+        gestor,
+        multipart(path)
+            .file(
+                new MockMultipartFile(
+                    "arquivo", "novo.pdf", "application/pdf", "%PDF-1.7 novo".getBytes())));
+    assertEquals("novo.pdf", anexos.findBySolicitacaoId(id).orElseThrow().getNome());
+    ok(cliente, post(url(id) + "/cancelar").param("motivo", "Cancelado"));
+    como(cliente, multipart(path).file(file)).andExpect(flash().attributeExists("erro"));
+    como(cliente, get(path)).andExpect(status().isOk());
+  }
+
+  @Test
+  void anexosRecusamFormatosETamanhosInvalidos() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    for (MockMultipartFile file :
+        List.of(
+            new MockMultipartFile("arquivo", "x.pdf", "application/pdf", "invalido".getBytes()),
+            new MockMultipartFile(
+                "arquivo", "x.html", "text/html", "<script>alert(1)</script>".getBytes()),
+            new MockMultipartFile(
+                "arquivo", "x.pdf", "application/pdf", new byte[5 * 1024 * 1024 + 1]),
+            new MockMultipartFile("arquivo", "x.pdf", "application/pdf", new byte[0])))
+      como(cliente, multipart(url(id) + "/anexo").file(file))
+          .andExpect(flash().attributeExists("erro"));
+    assertTrue(anexos.findBySolicitacaoId(id).isEmpty());
+  }
+
+  @Test
+  void complementosInvalidosDuplicadosEOuOutraSolicitacaoNaoAlteramHistorico() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    ok(gestor, post(url(id) + "/analisar"));
+    for (String pergunta : List.of(" ", "x".repeat(2001)))
+      como(gestor, post(url(id) + "/complementos").param("pergunta", pergunta))
+          .andExpect(flash().attributeExists("erro"));
+    ok(gestor, post(url(id) + "/complementos").param("pergunta", "Pergunta?"));
+    Long cid = pendente(id);
+    como(gestor, post(url(id) + "/complementos").param("pergunta", "Duplicada"))
+        .andExpect(flash().attributeExists("erro"));
+    como(cliente, post(url(id) + "/complementos/" + cid + "/responder").param("resposta", " "))
+        .andExpect(flash().attributeExists("erro"));
+    Long outroId = abrir(cliente, aeronave);
+    ok(gestor, post(url(outroId) + "/analisar"));
+    ok(gestor, post(url(outroId) + "/complementos").param("pergunta", "Outra?"));
+    como(
+            cliente,
+            post(url(outroId) + "/complementos/" + cid + "/responder")
+                .param("resposta", "Fora de contexto"))
+        .andExpect(flash().attributeExists("erro"));
+    ok(
+        cliente,
+        post(url(id) + "/complementos/" + cid + "/responder").param("resposta", "Respondido"));
+    ok(gestor, post(url(id) + "/complementos").param("pergunta", "Nova rodada?"));
+    como(
+            cliente,
+            post(url(id) + "/complementos/" + cid + "/responder").param("resposta", "Repetida"))
+        .andExpect(flash().attributeExists("erro"));
+    ok(cliente, post(url(id) + "/cancelar").param("motivo", "Não necessário"));
+    como(
+            cliente,
+            post(url(id) + "/complementos/" + pendente(id) + "/responder")
+                .param("resposta", "Tardia"))
+        .andExpect(flash().attributeExists("erro"));
+  }
+
+  @Test
+  void orcamentoVencidoValoresInvalidosERecusaFinal() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    ok(gestor, post(url(id) + "/analisar"));
+    for (String valor : List.of("-1", "0", "1.234", "10000000000", "abc"))
+      como(
+              gestor,
+              post(url(id) + "/orcamentos")
+                  .param("descricaoServico", "Reparo")
+                  .param("valorTotal", valor)
+                  .param("dataValidade", LocalDate.now().toString()))
+          .andExpect(flash().attributeExists("erro"));
+    enviar(id, "50");
+    Long oid = vigente(id);
     new TransactionTemplate(transactions)
         .executeWithoutResult(
-            tx -> {
-              Solicitacao s = solicitacoes.findById(id).orElseThrow();
-              var gestor = gestores.findFirstByOrderByIdAsc().orElseThrow();
-              var o =
-                  orcamentos.save(
-                      new Orcamento(
-                          s, 1, "Serviço", new BigDecimal("1250.50"), LocalDate.now(), gestor));
-              assertTrue(o.podeSerDecidido(LocalDate.now()));
-              assertTrue(o.estaVencido(LocalDate.now().plusDays(1)));
-              var c = complementos.save(new Complemento(s, "Qual a última inspeção?"));
-              c.responder("Há seis meses");
-              var responsavel =
-                  responsaveis.save(
-                      new ResponsavelConfirmacao(
-                          "Responsável teste", UUID.randomUUID() + "@exemplo.com"));
-              assertNotNull(
-                  confirmacoes
-                      .save(new Confirmacao(s, LocalDate.now(), "Referência de teste", responsavel))
-                      .getId());
-              assertNotNull(o.getId());
-              assertNotNull(c.getId());
-            });
+            tx ->
+                em.createQuery("update Orcamento o set o.dataValidade=:data where o.id=:id")
+                    .setParameter("data", LocalDate.now().minusDays(1))
+                    .setParameter("id", oid)
+                    .executeUpdate());
+    como(cliente, post(url(id) + "/orcamentos/" + oid + "/decidir").param("decisao", "APROVADO"))
+        .andExpect(flash().attributeExists("erro"));
+    ok(gestor, post(url(id) + "/orcamentos/" + oid + "/revisar"));
+    enviar(id, "50");
+    ok(
+        cliente,
+        post(url(id) + "/orcamentos/" + vigente(id) + "/decidir").param("decisao", "RECUSADO"));
+    assertEquals(
+        SituacaoSolicitacao.RECUSADA, solicitacoes.findById(id).orElseThrow().getSituacao());
+    como(gestor, post(url(id) + "/cancelar").param("motivo", "Teste"))
+        .andExpect(flash().attributeExists("erro"));
+  }
+
+  @Test
+  void finalizacaoValidaDatasEBloqueiaRepeticaoECancelamento() throws Exception {
+    Long id = aprovada();
+    como(
+            responsavel,
+            post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()))
+        .andExpect(flash().attributeExists("erro"));
+    ok(gestor, post(url(id) + "/encaminhar").param("descricao", "Oficina"));
+    como(cliente, post(url(id) + "/cancelar").param("motivo", "Teste"))
+        .andExpect(flash().attributeExists("erro"));
+    for (String data :
+        List.of(
+            "",
+            "invalida",
+            LocalDate.now().minusDays(1).toString(),
+            LocalDate.now().plusDays(1).toString()))
+      como(responsavel, post(url(id) + "/confirmar").param("dataRealizacao", data))
+          .andExpect(flash().attributeExists("erro"));
+    ok(
+        responsavel,
+        post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()));
+    como(
+            responsavel,
+            post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()))
+        .andExpect(flash().attributeExists("erro"));
+    como(gestor, post(url(id) + "/encaminhar").param("descricao", "Outra oficina"))
+        .andExpect(flash().attributeExists("erro"));
+  }
+
+  @Test
+  void senhaPessoalValidaSenhaAtualEMantemHash() throws Exception {
+    como(
+            cliente,
+            post("/conta/senha").param("senhaAtual", "errada").param("novaSenha", "OutraSenha123!"))
+        .andExpect(flash().attributeExists("erro"));
+    ok(
+        cliente,
+        post("/conta/senha").param("senhaAtual", senha).param("novaSenha", "OutraSenha123!"));
+    var hash = usuarios.findById(cliente.getId()).orElseThrow().getSenhaHash();
+    assertTrue(encoder.matches("OutraSenha123!", hash));
+    assertNotEquals("OutraSenha123!", hash);
+  }
+
+  @Test
+  void csrfCadastroDuplicadoETelas() throws Exception {
+    mvc.perform(post("/clientes").with(user(gestor.getEmail()).roles("GESTOR")))
+        .andExpect(status().isForbidden());
+    como(
+            gestor,
+            post("/aeronaves")
+                .param("matricula", aeronave.getMatricula().toLowerCase())
+                .param("fabricante", "Embraer")
+                .param("modelo", "Modelo")
+                .param("clienteId", cliente.getId().toString()))
+        .andExpect(model().attributeHasErrors("form"));
+    for (String rota : List.of("/", "/clientes", "/aeronaves", "/solicitacoes", "/conta"))
+      como(gestor, get(rota)).andExpect(status().isOk());
+    como(cliente, get("/solicitacoes/nova")).andExpect(status().isOk());
+    como(cliente, get("/solicitacoes/99999999")).andExpect(status().isNotFound());
   }
 }

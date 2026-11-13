@@ -8,6 +8,15 @@ import org.springframework.web.bind.annotation.*;
 
 @ControllerAdvice
 public class ErroControllerAdvice {
+  @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+  @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
+  public String arquivoGrande(Model model) {
+    model.addAttribute(
+        "mensagem",
+        "Arquivo excede o limite de 5 MB. Volte à solicitação e selecione um arquivo menor.");
+    return "error";
+  }
+
   @ExceptionHandler({
     DataIntegrityViolationException.class,
     ObjectOptimisticLockingFailureException.class

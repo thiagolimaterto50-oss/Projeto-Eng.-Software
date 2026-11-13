@@ -19,6 +19,13 @@ public class Cliente extends Usuario {
     this.telefone = telefone;
   }
 
+  public void atualizar(
+      String nome, String email, String documento, String telefone, boolean ativo) {
+    atualizarDados(nome, email, ativo);
+    this.documento = documento;
+    this.telefone = telefone;
+  }
+
   public String getDocumento() {
     return documento;
   }

@@ -6,5 +6,6 @@ import org.springframework.data.repository.CrudRepository;
 
 public interface IResponsavelConfirmacaoDAO extends CrudRepository<ResponsavelConfirmacao, Long> {
   List<ResponsavelConfirmacao> findAll();
+
   java.util.Optional<ResponsavelConfirmacao> findFirstByOrderByIdAsc();
 }
