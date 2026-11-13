@@ -46,6 +46,25 @@ public class CadastroService {
 
   public Cliente cadastrarCliente(@Valid ClienteForm form, String senha) {
     acesso.gestor();
+    return criarCliente(form, senha);
+  }
+
+  public record CadastroPublicoForm(
+      @NotBlank @Size(max = 120) String nome,
+      @NotBlank @Email @Size(max = 180) String email,
+      @NotBlank @Size(max = 30) String documento,
+      @Size(max = 30) String telefone,
+      @NotBlank @Size(min = 8, max = 72) String senha,
+      @NotBlank @Size(max = 72) String confirmacaoSenha) {}
+
+  public Cliente cadastrarPublico(@Valid CadastroPublicoForm form) {
+    if (!form.senha().equals(form.confirmacaoSenha()))
+      throw new IllegalArgumentException("As senhas não coincidem.");
+    // O tipo da conta é fixo. Nenhum perfil ou identificador vem do formulário público.
+    return criarCliente(new ClienteForm(form.nome(), form.email(), form.documento(), form.telefone()), form.senha());
+  }
+
+  private Cliente criarCliente(ClienteForm form, String senha) {
     validarSenha(senha);
     String email = form.email().strip().toLowerCase(Locale.ROOT);
     if (usuarios.existsByEmailIgnoreCase(email))

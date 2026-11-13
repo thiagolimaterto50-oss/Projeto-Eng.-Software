@@ -35,13 +35,13 @@ public class WebSecurityConfig {
   SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
     return http.authorizeHttpRequests(
             auth ->
-                auth.requestMatchers("/login", "/css/**", "/error")
+                auth.requestMatchers("/", "/login", "/cadastro", "/css/**", "/error")
                     .permitAll()
                     .requestMatchers("/clientes", "/clientes/**")
                     .hasRole("GESTOR")
                     .anyRequest()
                     .authenticated())
-        .formLogin(form -> form.loginPage("/login").defaultSuccessUrl("/", true).permitAll())
+        .formLogin(form -> form.loginPage("/login").defaultSuccessUrl("/painel", true).permitAll())
         .logout(logout -> logout.logoutSuccessUrl("/login?logout").permitAll())
         .build();
   }

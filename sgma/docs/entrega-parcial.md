@@ -8,7 +8,7 @@ Incremento de 12/11: login/logout, senhas BCrypt, três perfis reais, isolamento
 
 ## Verificação
 
-- `gradlew test bootJar`: 14 testes aprovados (13 integração e 1 contexto).
+- `gradlew test bootJar`: 17 testes aprovados (16 integração e 1 contexto).
 - Login real, logout, conta inativa, senha pessoal e senhas iniciais com hash.
 - URLs e operações de outro cliente negadas; contas/perfis não executam ações alheias.
 - Fluxo completo com gestor, cliente e responsável reais, incluindo histórico, versões e validações de datas/valores.
@@ -28,3 +28,7 @@ Siga o roteiro e as credenciais de demonstração no README da raiz. Contas conh
 - Criação inicial de gestores/responsáveis por variáveis de ambiente; não há tela administrativa para esses perfis.
 - Diagramas originais permanecem como referência; revisar a representação do anexo e os nomes de pacote.
 - Conferir o conjunto final de funcionalidades com o documento completo de requisitos, que ainda não foi fornecido nesta conversa.
+
+## Página pública e cadastro de clientes
+
+Apresentação pública em `/`, cabeçalho com login/cadastro, formulário de cadastro de cliente e painel protegido em `/painel`. Cadastro valida confirmação de senha, e-mail, documento, duplicidade e CSRF. Conta é sempre de cliente, mesmo com tentativa de enviar outro perfil. Três testes adicionais cobrem a página pública, cadastro/login e rejeições.

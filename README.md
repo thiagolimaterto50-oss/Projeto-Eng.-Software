@@ -22,6 +22,12 @@ $env:JAVA_HOME = 'C:\caminho\do\jdk-17'
 
 A primeira execução precisa de internet para baixar dependências. Não é necessário instalar Gradle. O perfil `demo` usa H2 em arquivo (`sgma/data/`) e preserva dados entre reinicializações.
 
+## Página inicial e cadastro público
+
+A rota `/` apresenta o projeto e o funcionamento do atendimento, com **Entrar** e **Cadastrar-se** no cabeçalho. O painel autenticado fica em `/painel`; o login redireciona para ele.
+
+Em **Cadastrar-se**, o visitante informa nome, e-mail, documento, telefone opcional, senha e confirmação. A conta criada é sempre de **cliente**, sem seleção de perfil. Senhas precisam coincidir e e-mail/documento não podem estar duplicados. Após o cadastro, entre com suas credenciais; o gestor ainda precisa cadastrar e vincular as aeronaves antes da abertura de solicitações. Não há verificação de e-mail nesta entrega.
+
 ## Contas de demonstração
 
 Disponíveis **somente nos perfis demo e test**, criadas na primeira inicialização:
@@ -101,7 +107,7 @@ $env:SGMA_RESPONSAVEL_SENHA = 'defina-outra-senha-propria'
 .\gradlew.bat bootRun
 ```
 
-O bootstrap cria essas contas se não existirem; não troca senhas já configuradas. Sem essas variáveis, nenhuma conta padrão é criada fora de `demo`/`test`. O gestor cadastra os clientes pela interface. Senhas precisam de pelo menos 8 caracteres e no máximo 72 bytes UTF-8. Não grave senhas reais no Git.
+O bootstrap cria essas contas se não existirem; não troca senhas já configuradas. Sem essas variáveis, nenhuma conta padrão é criada fora de `demo`/`test`. Clientes podem criar a própria conta em `/cadastro`; o gestor também pode cadastrá-los pela interface. Senhas precisam de pelo menos 8 caracteres e no máximo 72 bytes UTF-8. Não grave senhas reais no Git.
 
 O servidor escuta em `127.0.0.1` por padrão. `SERVER_ADDRESS` e `PORT` permitem ajustar o endereço e a porta para o ambiente de execução. Banco e implantação precisam de validação própria; esta implementação foi testada com H2. Não houve deploy. O esquema usa `ddl-auto=update`, próprio desta etapa de desenvolvimento.
 
@@ -113,7 +119,7 @@ Na pasta `sgma`, com o JDK configurado:
 .\gradlew.bat test bootJar
 ```
 
-São **14 testes** (13 de integração e um de contexto), com H2 em memória. Cobrem login/logout, inativação, mudança de senha, isolamento por cliente, permissões por ação, cadastros, anexos, validações e o fluxo completo. Não acessam os dados locais da demonstração.
+São **17 testes** (16 de integração e um de contexto), com H2 em memória. Cobrem login/logout, inativação, mudança de senha, isolamento por cliente, permissões por ação, cadastros, anexos, validações e o fluxo completo. Não acessam os dados locais da demonstração.
 
 Relatório: `sgma/build/reports/tests/test/index.html`. JAR: `sgma/build/libs/sgma-0.0.1-SNAPSHOT.jar`.
 

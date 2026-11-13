@@ -137,7 +137,7 @@ class PortalIntegrationTests {
 
   @Test
   void loginLogoutSenhaEContaInativa() throws Exception {
-    mvc.perform(get("/")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/login"));
+    mvc.perform(get("/painel")).andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/login"));
     mvc.perform(
             post("/login")
                 .with(csrf())
@@ -151,11 +151,11 @@ class PortalIntegrationTests {
                         .with(csrf())
                         .param("username", cliente.getEmail())
                         .param("password", senha))
-                .andExpect(redirectedUrl("/"))
+                .andExpect(redirectedUrl("/painel"))
                 .andReturn()
                 .getRequest()
                 .getSession(false);
-    mvc.perform(get("/").session(session)).andExpect(status().isOk());
+    mvc.perform(get("/painel").session(session)).andExpect(status().isOk());
     mvc.perform(post("/logout").session(session).with(csrf()))
         .andExpect(redirectedUrl("/login?logout"));
     assertTrue(session.isInvalid());
@@ -167,7 +167,7 @@ class PortalIntegrationTests {
                 .param("username", cliente.getEmail())
                 .param("password", senha))
         .andExpect(redirectedUrl("/login?error"));
-    como(cliente, get("/")).andExpect(status().isForbidden());
+    como(cliente, get("/painel")).andExpect(status().isForbidden());
   }
 
   @Test
@@ -177,7 +177,7 @@ class PortalIntegrationTests {
         .andExpect(status().isOk())
         .andExpect(content().string(containsString(aeronave.getMatricula())))
         .andExpect(content().string(not(containsString(aeronaveOutro.getMatricula()))));
-    como(cliente, get("/"))
+    como(cliente, get("/painel"))
         .andExpect(model().attribute("total", 1L))
         .andExpect(model().attribute("aeronavesTotal", 1));
     como(cliente, get("/aeronaves"))
@@ -311,7 +311,7 @@ class PortalIntegrationTests {
             .param("telefone", "987")
             .param("senha", "NovaSenha123!"));
     assertFalse(clientes.findById(cliente.getId()).orElseThrow().isAtivo());
-    como(cliente, get("/")).andExpect(status().isForbidden());
+    como(cliente, get("/painel")).andExpect(status().isForbidden());
     ok(
         gestor,
         post("/clientes/" + cliente.getId() + "/editar")
@@ -324,7 +324,7 @@ class PortalIntegrationTests {
                 .with(csrf())
                 .param("username", cliente.getEmail())
                 .param("password", "NovaSenha123!"))
-        .andExpect(redirectedUrl("/"));
+        .andExpect(redirectedUrl("/painel"));
   }
 
   @Test
@@ -538,7 +538,7 @@ class PortalIntegrationTests {
                 .param("modelo", "Modelo")
                 .param("clienteId", cliente.getId().toString()))
         .andExpect(model().attributeHasErrors("form"));
-    for (String rota : List.of("/", "/clientes", "/aeronaves", "/solicitacoes", "/conta"))
+    for (String rota : List.of("/painel", "/clientes", "/aeronaves", "/solicitacoes", "/conta"))
       como(gestor, get(rota)).andExpect(status().isOk());
     como(cliente, get("/solicitacoes/nova")).andExpect(status().isOk());
     como(cliente, get("/solicitacoes/99999999")).andExpect(status().isNotFound());

@@ -46,7 +46,7 @@ public class PortalController {
     model.addAttribute("tipos", TipoServico.values());
   }
 
-  @GetMapping("/")
+  @GetMapping("/painel")
   @Transactional(readOnly = true)
   public String painel(Model model) {
     model.addAttribute("total", solicitacoes.contar(acesso.filtroCliente(), null));
