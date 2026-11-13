@@ -27,7 +27,7 @@ Siga o roteiro e as credenciais de demonstração no README da raiz. Contas conh
 - Sem recuperação de senha por e-mail, antivírus, múltiplos anexos, histórico de arquivos, transferência de proprietário, exportação ou notificações.
 - Criação inicial de gestores/responsáveis por variáveis de ambiente; não há tela administrativa para esses perfis.
 - Diagramas originais permanecem como referência; revisar a representação do anexo e os nomes de pacote.
-- Conferir o conjunto final de funcionalidades com o documento completo de requisitos, que ainda não foi fornecido nesta conversa.
+- Conferir o conjunto final de funcionalidades com o documento completo de requisitos.
 
 ## Página pública e cadastro de clientes
 
