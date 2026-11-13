@@ -15,7 +15,7 @@ public class Anexo extends Entidade {
   private String tipo;
 
   @Lob
-  @Column(nullable = false)
+  @Column(nullable = false, columnDefinition = "LONGBLOB")
   private byte[] conteudo;
 
   protected Anexo() {}

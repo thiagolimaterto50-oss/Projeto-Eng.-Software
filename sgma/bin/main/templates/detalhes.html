@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="pt-BR" xmlns:th="http://www.thymeleaf.org"><head th:replace="~{fragmentos :: head}"></head><body><aside th:replace="~{fragmentos :: menu}"></aside><main><div th:replace="~{fragmentos :: aviso}"></div><a class="back" th:href="@{/solicitacoes}">← Solicitações</a><header><div><p class="eyebrow">ACOMPANHAMENTO</p><h1 th:text="'Solicitação SG-' + ${solicitacao.id}"></h1><p th:text="'Aberta em ' + ${#temporals.format(solicitacao.dataHoraAbertura, 'dd/MM/yyyy HH:mm')}"></p></div><span class="badge" th:classappend="${solicitacao.situacao.name()}" th:text="${solicitacao.situacao.rotulo}"></span></header><div class="detail-grid"><section class="panel form-panel"><h2>Dados da solicitação</h2><dl><div><dt>Cliente</dt><dd th:text="${solicitacao.cliente.nome}"></dd></div><div><dt>Aeronave</dt><dd th:text="${solicitacao.aeronave.matricula} + ' · ' + ${solicitacao.aeronave.modelo}"></dd></div><div><dt>Serviço</dt><dd th:text="${solicitacao.tipoServico.rotulo}"></dd></div></dl><h3>Descrição</h3><p class="description" th:text="${solicitacao.descricao}"></p><div th:if="${solicitacao.motivoCancelamento}"><h3>Motivo do cancelamento</h3><p class="description" th:text="${solicitacao.motivoCancelamento}"></p></div></section><section class="panel form-panel"><h2>Próximas ações</h2>
+<form th:if="${gestor and solicitacao.situacao.name() == 'APROVADA'}" th:action="@{/solicitacoes/{id}/encaminhar(id=${solicitacao.id})}" method="post">
+<label>Descrição do encaminhamento<textarea name="descricao" required maxlength="2000" rows="4"></textarea></label>
+<p class="muted">Após o encaminhamento, não será possível cancelar a solicitação.</p>
+<button>Registrar encaminhamento</button></form>
+<form th:if="${responsavel and solicitacao.situacao.name() == 'ENCAMINHADA'}" th:action="@{/solicitacoes/{id}/confirmar(id=${solicitacao.id})}" method="post">
+<p class="muted">A confirmação será registrada em seu nome.</p>
+<label>Data de realização<input type="date" name="dataRealizacao" required th:min="${#temporals.format(solicitacao.dataHoraEncaminhamento, 'yyyy-MM-dd')}"></label>
+<label>Referência (opcional)<input name="referencia" maxlength="500" placeholder="Ex.: ordem de serviço 123"></label>
+<button>Confirmar realização</button></form><form th:if="${gestor and solicitacao.situacao.name() == 'ABERTA'}" th:action="@{/solicitacoes/{id}/analisar(id=${solicitacao.id})}" method="post"><p>Assuma a triagem desta solicitação.</p><button>Iniciar análise</button></form><form th:if="${gestor and solicitacao.situacao.name() == 'EM_ANALISE'}" th:action="@{/solicitacoes/{id}/complementos(id=${solicitacao.id})}" method="post">
+<p>Precisa de mais detalhes para continuar a análise?</p>
+<label>Pergunta ao cliente<textarea name="pergunta" required maxlength="2000" rows="4"></textarea></label>
+<button>Solicitar complemento</button></form>
+<p th:if="${solicitacao.situacao.name() == 'AGUARDANDO_INFORMACAO'}">Aguardando a resposta do cliente na seção de complementos abaixo.</p><details th:if="${solicitacao.cancelavel and (gestor or cliente)}"><summary>Cancelar solicitação</summary><form th:action="@{/solicitacoes/{id}/cancelar(id=${solicitacao.id})}" method="post"><label>Motivo<textarea name="motivo" required maxlength="1000" rows="3"></textarea></label><button class="danger">Confirmar cancelamento</button></form></details><p th:if="${solicitacao.situacao.name() == 'CONCLUIDA' or solicitacao.situacao.name() == 'CANCELADA' or solicitacao.situacao.name() == 'RECUSADA'}">Solicitação encerrada. Os dados e o histórico permanecem disponíveis para consulta.</p></section></div><section class="panel form-panel" th:if="${solicitacao.dataHoraEncaminhamento != null}" id="realizacao">
+<h2>Encaminhamento e realização</h2><p class="description" th:text="${solicitacao.descricaoEncaminhamento}"></p>
+<p class="muted" th:text="'Encaminhado em ' + ${#temporals.format(solicitacao.dataHoraEncaminhamento, 'dd/MM/yyyy HH:mm')}"></p>
+<div th:if="${solicitacao.confirmacao != null}"><h3>Serviço realizado</h3>
+<dl><div><dt>Data de realização</dt><dd th:text="${#temporals.format(solicitacao.confirmacao.dataRealizacaoInformada, 'dd/MM/yyyy')}"></dd></div>
+<div><dt>Responsável pela confirmação</dt><dd th:text="${solicitacao.confirmacao.responsavel.nome}"></dd></div></dl>
+<p th:if="${solicitacao.confirmacao.referencia != null and !#strings.isEmpty(solicitacao.confirmacao.referencia)}" th:text="'Referência: ' + ${solicitacao.confirmacao.referencia}"></p>
+<p class="muted" th:text="'Registrado em ' + ${#temporals.format(solicitacao.confirmacao.dataHoraRegistro, 'dd/MM/yyyy HH:mm')}"></p></div></section>
+<section class="panel form-panel" th:if="${gestor or responsavel}"><h2>Triagem</h2><p class="description" th:text="${solicitacao.observacoesTriagem ?: 'Nenhuma observação registrada.'}"></p><form th:if="${gestor and solicitacao.situacao.name() == 'EM_ANALISE'}" th:action="@{/solicitacoes/{id}/triagem(id=${solicitacao.id})}" method="post"><label>Observações de triagem<textarea name="observacoes" required maxlength="2000" rows="4" th:text="${solicitacao.observacoesTriagem}"></textarea></label><button>Salvar triagem</button></form></section>
+<section class="panel form-panel"><h2>Anexo da solicitação</h2><p th:if="${solicitacao.anexo != null}"><a th:href="@{/solicitacoes/{id}/anexo(id=${solicitacao.id})}" th:text="${solicitacao.anexo}"></a></p><p th:if="${solicitacao.anexo == null}" class="muted">Nenhum arquivo anexado.</p><form th:if="${(gestor or cliente) and solicitacao.cancelavel}" th:action="@{/solicitacoes/{id}/anexo(id=${solicitacao.id})}" method="post" enctype="multipart/form-data"><label>Arquivo (PDF, PNG ou JPEG, até 5 MB)<input type="file" name="arquivo" accept=".pdf,.png,.jpg,.jpeg" required></label><p class="muted">Um arquivo por solicitação. Enviar outro substitui o anexo atual.</p><button>Enviar anexo</button></form></section>
+<section class="panel form-panel" id="orcamentos">
+<h2>Orçamentos</h2>
+<form th:if="${gestor and solicitacao.situacao.name() == 'EM_ANALISE'}" th:action="@{/solicitacoes/{id}/orcamentos(id=${solicitacao.id})}" method="post">
+<h3>Enviar nova versão</h3>
+<label>Descrição do orçamento<textarea name="descricaoServico" required maxlength="2000" rows="3"></textarea></label>
+<div class="form-grid"><label>Valor total (R$)<input name="valorTotal" type="number" min="0.01" max="9999999999.99" step="0.01" required></label>
+<label>Válido até<input name="dataValidade" type="date" required></label></div><button>Enviar orçamento</button></form>
+<p class="muted" th:if="${#lists.isEmpty(solicitacao.orcamentos)}">Nenhum orçamento enviado.</p>
+<article class="complemento" th:each="o : ${solicitacao.orcamentos}">
+<h3 th:text="'Versão ' + ${o.versao}"></h3>
+<p><span class="badge" th:text="${o.vigente ? 'Vigente' : 'Substituído / em revisão'}"></span> <span class="badge" th:text="${o.decisao.rotulo}"></span></p>
+<p class="description" th:text="${o.descricaoServico}"></p>
+<dl><div><dt>Valor total</dt><dd th:text="'R$ ' + ${#numbers.formatDecimal(o.valorTotal, 1, 'POINT', 2, 'COMMA')}"></dd></div>
+<div><dt>Validade</dt><dd th:text="${#temporals.format(o.dataValidade, 'dd/MM/yyyy')}"></dd></div></dl>
+<p class="muted" th:text="'Enviado por ' + ${o.elaborador.nome} + ' em ' + ${#temporals.format(o.dataHoraEnvio, 'dd/MM/yyyy HH:mm')}"></p>
+<p class="muted" th:if="${o.decisor != null}" th:text="'Decisão de ' + ${o.decisor.nome} + ' em ' + ${#temporals.format(o.dataHoraDecisao, 'dd/MM/yyyy HH:mm')}"></p>
+<div th:if="${o.vigente and solicitacao.situacao.name() == 'ORCAMENTO_ENVIADO'}">
+<p th:if="${o.vencido}" class="error">Orçamento vencido. Inicie uma revisão para enviar uma nova versão.</p>
+<form th:if="${cliente and o.disponivelParaDecisao}" th:action="@{/solicitacoes/{id}/orcamentos/{oid}/decidir(id=${solicitacao.id},oid=${o.id})}" method="post">
+<p class="muted">Sua decisão será registrada no histórico.</p>
+<button name="decisao" value="APROVADO">Aprovar orçamento</button> <button class="danger" name="decisao" value="RECUSADO">Recusar orçamento</button></form>
+<form th:if="${gestor}" th:action="@{/solicitacoes/{id}/orcamentos/{oid}/revisar(id=${solicitacao.id},oid=${o.id})}" method="post"><p class="muted">A revisão retira esta versão de decisão e retorna a solicitação para análise.</p><button class="secondary">Iniciar revisão</button></form>
+</div></article></section><section class="panel form-panel" id="complementos">
+<h2>Complementos de informação</h2>
+<p th:if="${#lists.isEmpty(solicitacao.complementos)}" class="muted">Nenhum complemento solicitado.</p>
+<article class="complemento" th:each="c : ${solicitacao.complementos}">
+<h3>Pergunta do gestor</h3><p class="description" th:text="${c.pergunta}"></p>
+<small class="muted" th:text="${#temporals.format(c.dataHoraPergunta, 'dd/MM/yyyy HH:mm')}"></small>
+<div th:if="${c.resposta != null}"><h3>Resposta do cliente</h3><p class="description" th:text="${c.resposta}"></p>
+<small class="muted" th:text="${#temporals.format(c.dataHoraResposta, 'dd/MM/yyyy HH:mm')}"></small></div>
+<form th:if="${cliente and c.resposta == null and solicitacao.situacao.name() == 'AGUARDANDO_INFORMACAO'}" th:action="@{/solicitacoes/{id}/complementos/{cid}/responder(id=${solicitacao.id},cid=${c.id})}" method="post">
+<p class="muted">Sua resposta será registrada no histórico.</p>
+<label>Resposta do cliente<textarea name="resposta" required maxlength="2000" rows="4"></textarea></label>
+<button>Enviar resposta</button></form>
+<p class="muted" th:if="${c.resposta == null and solicitacao.situacao.name() != 'AGUARDANDO_INFORMACAO'}">Sem resposta. Não é possível responder na situação atual.</p>
+</article></section>
+<section class="panel form-panel"><h2>Histórico do atendimento</h2><ol class="timeline"><li th:each="e : ${solicitacao.historico}"><span class="timeline-dot"></span><div><strong th:text="${e.situacaoNova.rotulo}"></strong><p class="description" th:text="${e.descricao}"></p><small th:text="${#temporals.format(e.dataHora, 'dd/MM/yyyy HH:mm')} + ' · ' + ${e.autor.nome}"></small></div></li></ol></section></main></body></html>

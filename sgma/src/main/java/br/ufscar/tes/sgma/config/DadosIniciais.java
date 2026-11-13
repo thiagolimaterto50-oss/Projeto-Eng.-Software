@@ -18,7 +18,7 @@ public class DadosIniciais {
       PasswordEncoder encoder,
       Environment env) {
     return args -> {
-      boolean demo = env.acceptsProfiles(Profiles.of("demo", "test"));
+            boolean demo = env.acceptsProfiles(Profiles.of("!prod"));
       String gestorEmail =
           env.getProperty("SGMA_GESTOR_EMAIL", demo ? "operador@sgma.invalid" : "");
       String gestorSenha = env.getProperty("SGMA_GESTOR_SENHA", demo ? "Gestor123!" : "");
