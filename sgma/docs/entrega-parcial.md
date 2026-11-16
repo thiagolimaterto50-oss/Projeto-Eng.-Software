@@ -1,4 +1,4 @@
-# Estado da entrega parcial — 12/11/2026
+# Estado da entrega parcial — 15/11/2026
 
 ## Funcionalidades implementadas
 
@@ -19,11 +19,11 @@ Incremento de 12/11: login/logout, senhas BCrypt, três perfis reais, isolamento
 
 ## Como apresentar
 
-Siga o roteiro e as credenciais de demonstração no README da raiz. Contas conhecidas são exclusivas dos perfis demo/test. Cadastros antigos sem senha podem ser habilitados pelo gestor em Clientes → Editar. As ações novas registram o usuário autenticado; eventos antigos simulados permanecem intactos.
+Siga o roteiro e as credenciais de demonstração no README da raiz. As contas conhecidas são criadas quando o perfil `prod` está desativado. A aplicação local usa MySQL. Cadastros antigos sem senha podem ser habilitados pelo gestor em Clientes → Editar. As ações novas registram o usuário autenticado; eventos antigos simulados permanecem intactos.
 
 ## Limitações e próximos cuidados
 
-- A validação realizada usou H2; MySQL e deploy continuam pendentes de verificação no ambiente do grupo.
+- Execução local validada com MySQL 8.4.13 e usuário dedicado ao banco. A implantação em servidor permanece pendente.
 - Sem recuperação de senha por e-mail, antivírus, múltiplos anexos, histórico de arquivos, transferência de proprietário, exportação ou notificações.
 - Criação inicial de gestores/responsáveis por variáveis de ambiente; não há tela administrativa para esses perfis.
 - Diagramas originais permanecem como referência; revisar a representação do anexo e os nomes de pacote.
@@ -32,3 +32,13 @@ Siga o roteiro e as credenciais de demonstração no README da raiz. Contas conh
 ## Página pública e cadastro de clientes
 
 Apresentação pública em `/`, cabeçalho com login/cadastro, formulário de cadastro de cliente e painel protegido em `/painel`. Cadastro valida confirmação de senha, e-mail, documento, duplicidade e CSRF. Conta é sempre de cliente, mesmo com tentativa de enviar outro perfil. Três testes adicionais cobrem a página pública, cadastro/login e rejeições.
+
+## Verificação da execução local em 15/11/2026
+
+- Windows, JDK 17 e MySQL Community Server 8.4.13, com banco inicialmente vazio e usuário `sgma` restrito ao schema da aplicação.
+- `clean test bootJar` concluído com 17 testes aprovados. H2 ficou restrito à suíte automatizada.
+- Navegador Edge com login real dos três perfis, abertura, anexo, orçamento, aprovação, encaminhamento e confirmação.
+- Cadastro público de um segundo cliente e negativa HTTP 403 ao consultar a solicitação e o anexo do primeiro.
+- Consulta SQL confirmou hash BCrypt de 60 caracteres nas quatro contas criadas durante a verificação.
+- Reinício do servidor MySQL e da aplicação preservou o login, a solicitação concluída, os sete eventos do fluxo com anexo e o download do arquivo.
+- O README inclui preparação do MySQL, variáveis de ambiente, início em Windows/Linux/macOS, contas de avaliação e diagnóstico dos erros comuns. A validação em navegador ocorreu no Windows.
