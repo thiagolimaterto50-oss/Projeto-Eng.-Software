@@ -20,10 +20,11 @@ public class AcessoService {
     var auth = SecurityContextHolder.getContext().getAuthentication();
     if (auth == null || !auth.isAuthenticated())
       throw new AccessDeniedException("Entre para continuar.");
-    var usuario =
-        usuarios
-            .findByEmailIgnoreCase(auth.getName())
-            .orElseThrow(() -> new AccessDeniedException("Conta indisponível."));
+    var registro = auth.getPrincipal() instanceof br.ufscar.tes.sgma.config.UsuarioAutenticado sessao
+        ? usuarios.findById(sessao.getUsuarioId())
+        : usuarios.findByEmailIgnoreCase(auth.getName());
+    var usuario = org.hibernate.Hibernate.unproxy(
+        registro.orElseThrow(() -> new AccessDeniedException("Conta indisponível.")), Usuario.class);
     if (!usuario.isAtivo()) throw new AccessDeniedException("Conta inativa.");
     return usuario;
   }
@@ -50,12 +51,14 @@ public class AcessoService {
 
   public Long filtroCliente() {
     var u = atual();
-    return u instanceof Cliente ? u.getId() : null;
+    if (u instanceof Cliente) return u.getId();
+    if (u instanceof GestorSolicitacoes || u instanceof ResponsavelConfirmacao) return null;
+    throw new AccessDeniedException("Perfil indisponível.");
   }
 
   public void verificarCliente(Long id) {
-    var u = atual();
-    if (u instanceof Cliente && !u.getId().equals(id))
+    Long clienteId = filtroCliente();
+    if (clienteId != null && !clienteId.equals(id))
       throw new AccessDeniedException("Registro de outro cliente.");
   }
 

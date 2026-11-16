@@ -142,15 +142,15 @@ Conferência individual em **15/11/2026**, sobre a implementação do commit [`e
 
 **Implementado** indica comportamento encontrado no código, com evidências citadas na linha. **Parcial** indica funcionalidade existente com lacunas frente ao texto do requisito. **Pendente** indica implementação ou ensaio ausente. **A validar** indica evidência insuficiente para afirmar atendimento integral. **Verificado** é usado para os cenários de aceitação e o caso de uso, conforme os testes e inspeções descritos.
 
-A última execução da suíte sobre esta implementação teve **17 testes aprovados**. A verificação com MySQL e navegador está registrada na [documentação da entrega][verif]. As tabelas distinguem evidência automatizada, inspeção do código e ensaio manual. O atendimento de um critério de aceitação não implica que todos os requisitos relacionados estejam completos.
+Revisão complementar em **16/11/2026** para RF001, RF002, RF003, RF014 e RN01, incluindo regressão do isolamento entre clientes. A última execução da suíte teve **22 testes aprovados**. A verificação com MySQL e navegador está registrada na [documentação da entrega][verif]. As tabelas distinguem evidência automatizada, inspeção do código e ensaio manual. O atendimento de um critério de aceitação não implica que todos os requisitos relacionados estejam completos.
 
 ### Requisitos funcionais
 
 | ID | Requisito resumido | Status | Evidência e pendência |
 |---|---|---|---|
-| RF001 | Autenticar usuários e autorizar operações por perfil | Parcial | Login, BCrypt e bloqueios por perfil funcionam. As permissões de cadastro/edição divergem da seção 2 em RF002/RF003. [Segurança][seg], [acesso][acesso] e teste `perfisNaoPodemExecutarAcoesUnsDosOutrosNemDiretoNoServico` em [integração][tests]. |
-| RF002 | Cliente cadastrar e atualizar identificação e contato | Parcial | Cadastro público implementado. A edição exige gestor em `editarCliente`; a conta do cliente permite apenas trocar a senha. [Cadastro][cad], [conta][conta] e [testes de cadastro público][publicTests]. |
-| RF003 | Cliente cadastrar aeronave; gestor corrigir vínculo com justificativa | Parcial | O gestor cadastra a aeronave e informa justificativa opcional. O cliente não pode cadastrar, e `editarAeronave` bloqueia troca de proprietário. [Cadastro][cad] e teste `aeronaveEditavelInativaBloqueiaAberturaEVinculoPreservaProprietario` em [integração][tests]. |
+| RF001 | Autenticar usuários e autorizar operações por perfil | Implementado | Login, BCrypt, permissões de autoatendimento e bloqueios por perfil. Sessão vinculada ao ID imutável do usuário, preservando a identidade após alteração/reuso de e-mail. [Segurança][seg], [acesso][acesso] e testes de perfis/sessão em [integração][tests]. |
+| RF002 | Cliente cadastrar e atualizar identificação e contato | Implementado | Cadastro público e edição de nome, e-mail, documento e telefone em Minha conta. Identidade vem da sessão; valida duplicidade e impede alterar perfil/ativação ou outro cliente. [Cadastro][cad], [conta][conta], [cadastro público][publicTests] e testes `autoEdicao*` em [integração][tests]. |
+| RF003 | Cliente cadastrar aeronave; gestor corrigir vínculo com justificativa | Implementado | Cliente cadastra na própria conta. Somente gestor corrige o proprietário, com justificativa obrigatória e histórico de anterior/novo cliente, autor e instante. Pedidos antigos preservam seu cliente original. [Cadastro][cad], [aeronave][aero] e testes `clienteCadastraAeronaveSomenteNaPropriaConta` / `correcaoDeVinculoAuditadaPreservaPedidosAntigos` em [integração][tests]. |
 | RF004 | Abrir pedido para aeronave própria, com tipo, descrição e anexo opcional | Implementado | `abrir` verifica cliente e propriedade. A tela aceita anexo, armazenado no banco e com download autorizado. [Serviço][serv], [anexos][anexos] e testes de isolamento/anexos em [integração][tests]. |
 | RF005 | Gerar identificador, instante de abertura e estado Aberta | Implementado | ID gerado pelo JPA. O construtor registra data/hora, estado e evento de abertura. [Entidade][ent], [solicitação][sol] e teste do fluxo completo em [integração][tests]. |
 | RF006 | Gestor iniciar análise e registrar observações de triagem | Implementado | `iniciarAnalise` exige Aberta; `registrarTriagem` exige Em análise e gestor autenticado. [Serviço][serv], [solicitação][sol] e teste do fluxo completo em [integração][tests]. |
@@ -179,7 +179,7 @@ A última execução da suíte sobre esta implementação teve **17 testes aprov
 
 | ID | Requisito resumido | Status | Evidência e pendência |
 |---|---|---|---|
-| RN01 | Cliente acessar somente seus pedidos e aeronaves; perfis internos respeitarem atribuições | Implementado | Filtro de propriedade e verificações por perfil no serviço. Cadastro pelo próprio cliente permanece pendente em RF003. [Acesso][acesso], [controller][ctrl] e testes de isolamento/perfis em [integração][tests]. |
+| RN01 | Cliente acessar somente seus pedidos e aeronaves; perfis internos respeitarem atribuições | Implementado | Corrigida a identificação de cliente carregado como proxy JPA, que podia retirar o filtro. Perfil desconhecido é negado. Testes cobrem proxy, sessão após troca/reuso do e-mail, URLs, anexos e mudança do proprietário. [Acesso][acesso] e [integração][tests]. |
 | RN02 | Matrícula única entre aeronaves ativas e pedido vinculado a aeronave cadastrada | Implementado | `matriculaAtiva` é única no banco e fica nula para inativas. A abertura busca uma aeronave existente e ativa. [Aeronave][aero], [serviço][serv] e testes de cadastro/inativação em [integração][tests]. |
 | RN03 | Aprovar somente versão vigente e válida; vencida exige nova versão | Implementado | Validade e vigência são verificadas ao decidir. Revisão permite novo envio e a ficha orienta o usuário após vencimento. [Orçamento][orc], [ficha][ficha] e teste `orcamentoVencidoValoresInvalidosERecusaFinal` em [integração][tests]. |
 | RN04 | Revisão exigir nova decisão, sem herdar aprovação | Implementado | Cada nova versão começa PENDENTE. A revisão segue a tabela de transições, a partir de Orçamento enviado. [Orçamento][orc], [solicitação][sol] e teste do fluxo com duas versões em [integração][tests]. |
@@ -201,7 +201,7 @@ A última execução da suíte sobre esta implementação teve **17 testes aprov
 
 | ID | Requisito resumido | Status | Evidência e pendência |
 |---|---|---|---|
-| UC01 | Solicitar orçamento e acompanhar manutenção | Verificado | Fluxo principal autenticado exercitado com MySQL. A suíte cobre triagem, complemento, revisão, recusa e cancelamento. As pré-condições usam cliente/aeronave já cadastrados; as lacunas de autoatendimento estão em RF002/RF003. [Teste do fluxo completo][tests] e [verificação][verif]. |
+| UC01 | Solicitar orçamento e acompanhar manutenção | Verificado | Fluxo principal autenticado exercitado com MySQL. A suíte cobre triagem, complemento, revisão, recusa e cancelamento. Em 16/11, também foi exercitado no navegador o cadastro público, cadastro da própria aeronave e abertura do pedido. [Teste do fluxo completo][tests] e [verificação][verif]. |
 
 As decisões em aberto da seção 8 incluem criação de usuários, correção do vínculo cliente–aeronave, comprovante da confirmação, cancelamento após aprovação, validade padrão, limites de anexos, retenção e carga de desempenho. A implementação atual adota algumas dessas escolhas, como anexo de até 5 MB, cancelamento antes do encaminhamento e referência opcional. A aprovação dessas escolhas pela equipe e pelos interessados continua pendente de registro.
 

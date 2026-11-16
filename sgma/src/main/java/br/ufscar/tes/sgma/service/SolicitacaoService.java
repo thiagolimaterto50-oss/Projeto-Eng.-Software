@@ -99,7 +99,7 @@ public class SolicitacaoService {
     acesso.cliente();
     Aeronave aeronave =
         aeronaves
-            .findById(form.aeronaveId())
+            .buscarParaAlteracao(form.aeronaveId())
             .orElseThrow(() -> new IllegalArgumentException("Aeronave não encontrada."));
     acesso.verificarCliente(aeronave.getCliente().getId());
     return solicitacoes.save(new Solicitacao(aeronave, form.tipoServico(), form.descricao()));

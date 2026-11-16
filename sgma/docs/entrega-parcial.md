@@ -1,14 +1,14 @@
-# Estado da entrega parcial — 15/11/2026
+# Estado da entrega parcial — 16/11/2026
 
 ## Funcionalidades implementadas
 
 Protótipo MVC com Thymeleaf, controllers, services, entidades e persistência JPA. Fluxo da solicitação: abertura, análise, complementação, orçamento versionado, aprovação/recusa, encaminhamento e confirmação; cancelamento antes de encaminhamento e histórico com autoria.
 
-Incremento de 12/11: login/logout, senhas BCrypt, três perfis reais, isolamento de dados por cliente (incluindo pesquisa e indicadores), mudança de senha, edição e inativação de clientes/aeronaves, justificativa de vínculo, triagem interna e um anexo persistido no banco por solicitação. PDF/PNG/JPEG até 5 MB, com download autenticado e substituição do arquivo atual. O proprietário é preservado na edição da aeronave.
+Incremento de 12/11: login/logout, senhas BCrypt, três perfis reais, isolamento de dados por cliente (incluindo pesquisa e indicadores), mudança de senha, edição e inativação de clientes/aeronaves, justificativa de vínculo, triagem interna e um anexo persistido no banco por solicitação. PDF/PNG/JPEG até 5 MB, com download autenticado e substituição do arquivo atual. A correção do proprietário pelo gestor foi acrescentada em 16/11, conforme registro abaixo.
 
 ## Verificação
 
-- `gradlew test bootJar`: 17 testes aprovados (16 integração e 1 contexto).
+- `gradlew test bootJar`: 22 testes aprovados (21 integração e 1 contexto).
 - Login real, logout, conta inativa, senha pessoal e senhas iniciais com hash.
 - URLs e operações de outro cliente negadas; contas/perfis não executam ações alheias.
 - Fluxo completo com gestor, cliente e responsável reais, incluindo histórico, versões e validações de datas/valores.
@@ -24,7 +24,7 @@ Siga o roteiro e as credenciais de demonstração no README da raiz. As contas c
 ## Limitações e próximos cuidados
 
 - Execução local validada com MySQL 8.4.13 e usuário dedicado ao banco. A implantação em servidor permanece pendente.
-- Sem recuperação de senha por e-mail, antivírus, múltiplos anexos, histórico de arquivos, transferência de proprietário, exportação ou notificações.
+- Sem recuperação de senha por e-mail, antivírus, múltiplos anexos, histórico de arquivos, exportação ou notificações.
 - Criação inicial de gestores/responsáveis por variáveis de ambiente; não há tela administrativa para esses perfis.
 - Diagramas originais permanecem como referência; revisar a representação do anexo e os nomes de pacote.
 - Conferir o conjunto final de funcionalidades com o documento completo de requisitos.
@@ -42,3 +42,15 @@ Apresentação pública em `/`, cabeçalho com login/cadastro, formulário de ca
 - Consulta SQL confirmou hash BCrypt de 60 caracteres nas quatro contas criadas durante a verificação.
 - Reinício do servidor MySQL e da aplicação preservou o login, a solicitação concluída, os sete eventos do fluxo com anexo e o download do arquivo.
 - O README inclui preparação do MySQL, variáveis de ambiente, início em Windows/Linux/macOS, contas de avaliação e diagnóstico dos erros comuns. A validação em navegador ocorreu no Windows.
+
+
+## RF002, RF003 e isolamento — 16/11/2026
+
+- RF002: Minha conta permite editar nome, e-mail, documento e telefone. O ID vem da sessão. A sessão usa ID imutável, para que alterar/reutilizar um e-mail não troque a identidade do usuário. Duplicidade de e-mail/documento e campos inválidos são rejeitados.
+- RF003: cliente cadastra aeronave em sua conta; tentativa de indicar outro cliente é negada. Gestor corrige vínculo com justificativa obrigatória, com histórico persistido de clientes anterior/novo, autor e instante. Abertura e correção bloqueiam a mesma aeronave durante a transação.
+- Decisão de implementação: solicitações já abertas continuam vinculadas ao cliente original. O novo proprietário recebe a aeronave para solicitações futuras, sem acesso aos atendimentos antigos. Histórico de correções é visível somente ao gestor.
+- Falha reproduzida antes da correção: uma referência JPA à classe base Usuario podia não passar em `instanceof Cliente`, fazendo `filtroCliente` retornar null e removendo o filtro de propriedade. AcessoService resolve o tipo real com Hibernate.unproxy e nega perfis desconhecidos. O teste de regressão falhou no código anterior e passou após a correção.
+- `gradlew test bootJar`: 22 testes aprovados. Novos testes cobrem o proxy JPA, cadastro com proprietário forjado, autoedição, duplicidades, preservação de identidade após reuso de e-mail e correção auditada sem expor pedidos antigos.
+- MySQL 8.4.13 com dados da verificação anterior, Edge/Playwright e três sessões: cadastro de dois clientes, login, cadastro da própria aeronave, abertura, edição de e-mail com sessão ativa, isolamento na listagem/busca/painel/frota e HTTP 403 na ficha alheia. Gestor corrigiu vínculo e consultou o histórico; cliente anterior manteve seu pedido e novo cliente recebeu apenas a aeronave.
+- Controles de Minha conta visíveis em 360 e 1280 px. Isto não substitui a revisão de todas as telas exigida por RNF001.
+- Reinício da aplicação com o mesmo MySQL preservou o login pelo e-mail atualizado, o proprietário corrigido e seu histórico; a ficha antiga continuou acessível ao cliente original e negada ao novo proprietário.

@@ -41,6 +41,7 @@ class PortalIntegrationTests {
   @Autowired IOrcamentoDAO orcamentos;
   @Autowired IAnexoDAO anexos;
   @Autowired PasswordEncoder encoder;
+  @Autowired AcessoService acesso;
   @Autowired SolicitacaoService service;
   @Autowired PlatformTransactionManager transactions;
   @PersistenceContext EntityManager em;
@@ -196,6 +197,18 @@ class PortalIntegrationTests {
     como(cliente, get("/aeronaves/" + aeronaveOutro.getId() + "/editar"))
         .andExpect(status().isForbidden());
     como(gestor, get(url(meu))).andExpect(status().isOk());
+  }
+
+  @Test
+  void filtroClientePreservaIsolamentoQuandoUsuarioJaEstaComoProxyJpa() {
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(cliente.getEmail(), "", List.of()));
+    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+      em.getReference(Usuario.class, cliente.getId());
+      assertEquals(cliente.getId(), acesso.filtroCliente());
+      assertThrows(AccessDeniedException.class, () -> acesso.verificarCliente(outro.getId()));
+      tx.setRollbackOnly();
+    });
   }
 
   @Test
@@ -365,9 +378,106 @@ class PortalIntegrationTests {
             .param("clienteId", cliente.getId().toString())
             .param("ativa", "true")
             .param("justificativaVinculo", "Documento apresentado"));
-    como(cliente, get("/aeronaves"))
+    como(gestor, get("/aeronaves"))
         .andExpect(content().string(containsString("Documento apresentado")));
     abrir(cliente, aeronave);
+  }
+
+  @Test
+  void clienteCadastraAeronaveSomenteNaPropriaConta() throws Exception {
+    String matricula = "PP-" + cliente.getDocumento().toUpperCase(Locale.ROOT);
+    ok(cliente, post("/aeronaves").param("matricula", matricula)
+        .param("fabricante", "Embraer").param("modelo", "Novo"));
+    var nova = aeronaves.findAll().stream().filter(a -> a.getMatricula().equals(matricula)).findFirst().orElseThrow();
+    assertEquals(cliente.getId(), nova.getCliente().getId());
+    como(outro, get("/aeronaves")).andExpect(content().string(not(containsString(matricula))));
+    for (Usuario ator : List.of(cliente, responsavel)) {
+      como(ator, post("/aeronaves").param("matricula", "XX-" + cliente.getDocumento())
+          .param("fabricante", "Embraer").param("modelo", "Novo")
+          .param("clienteId", outro.getId().toString())).andExpect(status().isForbidden());
+    }
+    como(cliente, post("/aeronaves").param("matricula", matricula)
+        .param("fabricante", "Embraer").param("modelo", "Novo"))
+        .andExpect(model().attributeHasErrors("form"));
+    abrir(cliente, nova);
+  }
+
+  @Test
+  void correcaoDeVinculoAuditadaPreservaPedidosAntigos() throws Exception {
+    Long antigo = abrir(cliente, aeronave);
+    String edit = "/aeronaves/" + aeronave.getId() + "/editar";
+    como(cliente, post(edit).param("matricula", aeronave.getMatricula())
+        .param("fabricante", "Embraer").param("modelo", "Modelo")
+        .param("clienteId", outro.getId().toString()).param("ativa", "true")
+        .param("justificativaVinculo", "Correcao documental")).andExpect(status().isForbidden());
+    ok(gestor, post(edit).param("matricula", aeronave.getMatricula())
+        .param("fabricante", "Embraer").param("modelo", "Modelo")
+        .param("clienteId", outro.getId().toString()).param("ativa", "true")
+        .param("justificativaVinculo", "Correcao documental"));
+    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+      var a = aeronaves.findById(aeronave.getId()).orElseThrow();
+      assertEquals(outro.getId(), a.getCliente().getId());
+      assertEquals(1, a.getAlteracoesVinculo().size());
+      var h = a.getAlteracoesVinculo().get(0);
+      assertEquals(cliente.getId(), h.getClienteAnterior().getId());
+      assertEquals(outro.getId(), h.getClienteNovo().getId());
+      assertEquals(gestor.getId(), h.getAutor().getId());
+      assertNotNull(h.getDataHora());
+      assertEquals("Correcao documental", h.getJustificativa());
+      assertEquals(cliente.getId(), solicitacoes.findById(antigo).orElseThrow().getCliente().getId());
+    });
+    como(gestor, get(edit)).andExpect(content().string(containsString("Correcao documental")));
+    como(cliente, get(url(antigo))).andExpect(status().isOk());
+    como(outro, get(url(antigo))).andExpect(status().isForbidden());
+    Long novo = abrir(outro, aeronave);
+    como(cliente, get(url(novo))).andExpect(status().isForbidden());
+    como(cliente, post("/solicitacoes").param("aeronaveId", aeronave.getId().toString())
+        .param("tipoServico", "REPARO").param("descricao", "Tentativa"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void autoEdicaoPreservaIdentidadeDaSessaoMesmoComReusoDoEmail() throws Exception {
+    Long pedidoOutro = abrir(outro, aeronaveOutro);
+    var sessao = (org.springframework.mock.web.MockHttpSession) mvc.perform(post("/login")
+        .param("username", cliente.getEmail()).param("password", senha).with(csrf()))
+        .andExpect(status().is3xxRedirection()).andReturn().getRequest().getSession(false);
+    assertNotNull(sessao);
+    String novoEmail = "novo-" + cliente.getEmail();
+    mvc.perform(post("/conta/dados").session(sessao).with(csrf())
+        .param("nome", "Nome atualizado").param("email", novoEmail)
+        .param("documento", cliente.getDocumento()).param("telefone", "999")
+        .param("id", outro.getId().toString()).param("ativo", "false").param("perfil", "GESTOR"))
+        .andExpect(flash().attributeExists("sucesso"));
+    var atualizado = clientes.findById(cliente.getId()).orElseThrow();
+    assertEquals("Nome atualizado", atualizado.getNome());
+    assertEquals(novoEmail, atualizado.getEmail());
+    assertTrue(atualizado.isAtivo());
+    assertEquals("CLIENTE", atualizado.getPerfil());
+    ok(gestor, post("/clientes/" + outro.getId() + "/editar")
+        .param("nome", outro.getNome()).param("email", cliente.getEmail())
+        .param("documento", outro.getDocumento()).param("telefone", "123").param("ativo", "true"));
+    mvc.perform(get("/conta").session(sessao)).andExpect(status().isOk())
+        .andExpect(content().string(containsString(novoEmail)));
+    mvc.perform(get(url(pedidoOutro)).session(sessao)).andExpect(status().isForbidden());
+    mvc.perform(get("/aeronaves").session(sessao))
+        .andExpect(content().string(containsString(aeronave.getMatricula())))
+        .andExpect(content().string(not(containsString(aeronaveOutro.getMatricula()))));
+    mvc.perform(post("/login").with(csrf()).param("username", novoEmail).param("password", senha))
+        .andExpect(org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.authenticated());
+  }
+
+  @Test
+  void autoEdicaoRejeitaDuplicatasCamposInvalidosEOutrosPerfis() throws Exception {
+    como(cliente, post("/conta/dados").param("nome", "Nome").param("email", outro.getEmail())
+        .param("documento", cliente.getDocumento())).andExpect(model().attributeHasErrors("form"));
+    como(cliente, post("/conta/dados").param("nome", "Nome").param("email", cliente.getEmail())
+        .param("documento", outro.getDocumento())).andExpect(model().attributeHasErrors("form"));
+    como(cliente, post("/conta/dados").param("nome", "").param("email", "invalido")
+        .param("documento", cliente.getDocumento())).andExpect(model().attributeHasFieldErrors("form", "nome", "email"));
+    como(responsavel, post("/conta/dados").param("nome", "Nome").param("email", "a@b.test")
+        .param("documento", "teste")).andExpect(status().isForbidden());
+    assertEquals(cliente.getEmail(), clientes.findById(cliente.getId()).orElseThrow().getEmail());
   }
 
   @Test

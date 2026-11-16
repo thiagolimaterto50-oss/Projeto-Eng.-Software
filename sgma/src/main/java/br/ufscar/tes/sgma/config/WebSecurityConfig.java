@@ -23,11 +23,7 @@ public class WebSecurityConfig {
           usuarios
               .findByEmailIgnoreCase(email.strip().toLowerCase(Locale.ROOT))
               .orElseThrow(() -> new UsernameNotFoundException("Credenciais inválidas."));
-      return User.withUsername(u.getEmail())
-          .password(u.getSenhaHash())
-          .roles(u.getPerfil())
-          .disabled(!u.isAtivo())
-          .build();
+      return new UsuarioAutenticado(org.hibernate.Hibernate.unproxy(u, br.ufscar.tes.sgma.domain.Usuario.class));
     };
   }
 

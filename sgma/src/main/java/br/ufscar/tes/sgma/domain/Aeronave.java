@@ -24,6 +24,10 @@ public class Aeronave extends Entidade {
   @JoinColumn(nullable = false)
   private Cliente cliente;
 
+  @OneToMany(mappedBy = "aeronave", cascade = CascadeType.ALL)
+  @OrderBy("dataHora ASC, id ASC")
+  private java.util.List<AlteracaoVinculo> alteracoesVinculo = new java.util.ArrayList<>();
+
   @Column(unique = true, length = 12)
   private String matriculaAtiva;
 
@@ -54,6 +58,20 @@ public class Aeronave extends Entidade {
 
   public String getMatricula() {
     return matricula;
+  }
+
+  public void corrigirVinculo(Cliente novo, String justificativa, GestorSolicitacoes autor) {
+    if (cliente.getId().equals(novo.getId())) return;
+    if (justificativa == null || justificativa.isBlank() || justificativa.length() > 1000)
+      throw new IllegalArgumentException("Informe uma justificativa de até 1000 caracteres para mudar o cliente.");
+    if (autor == null || !autor.isAtivo())
+      throw new IllegalArgumentException("Gestor inválido.");
+    alteracoesVinculo.add(new AlteracaoVinculo(this, cliente, novo, autor, justificativa.strip()));
+    cliente = novo;
+  }
+
+  public java.util.List<AlteracaoVinculo> getAlteracoesVinculo() {
+    return java.util.Collections.unmodifiableList(alteracoesVinculo);
   }
 
   public String getFabricante() {
