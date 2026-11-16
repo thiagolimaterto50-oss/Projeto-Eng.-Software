@@ -42,7 +42,7 @@ public class CadastroService {
       @NotBlank @Pattern(regexp = "[A-Za-z0-9-]{3,12}") String matricula,
       @NotBlank @Size(max = 80) String fabricante,
       @NotBlank @Size(max = 80) String modelo,
-      @NotNull Long clienteId) {}
+      Long clienteId) {}
 
   public Cliente cadastrarCliente(@Valid ClienteForm form, String senha) {
     acesso.gestor();
@@ -78,12 +78,23 @@ public class CadastroService {
   }
 
   public Aeronave cadastrarAeronave(@Valid AeronaveForm form, String justificativa) {
-    acesso.gestor();
+    var autor = acesso.atual();
+    Long clienteId;
+    if (autor instanceof Cliente clienteAtual) {
+      if (form.clienteId() != null && !form.clienteId().equals(clienteAtual.getId()))
+        throw new org.springframework.security.access.AccessDeniedException("Cadastre a aeronave em sua própria conta.");
+      clienteId = clienteAtual.getId();
+      justificativa = null;
+    } else {
+      acesso.gestor();
+      clienteId = form.clienteId();
+    }
+    if (clienteId == null) throw new IllegalArgumentException("Selecione o cliente da aeronave.");
     validarJustificativa(justificativa);
     String matricula = form.matricula().toUpperCase(Locale.ROOT);
     Cliente cliente =
         clientes
-            .findById(form.clienteId())
+            .findById(clienteId)
             .orElseThrow(() -> new IllegalArgumentException("Cliente não encontrado."));
     if (!cliente.isAtivo()) throw new IllegalArgumentException("Cliente inativo.");
     if (aeronaves.existsByMatriculaIgnoreCaseAndAtivaTrue(matricula))
@@ -99,31 +110,40 @@ public class CadastroService {
         clientes
             .findById(id)
             .orElseThrow(() -> new IllegalArgumentException("Cliente não encontrado."));
-    String email = form.email().strip().toLowerCase(Locale.ROOT);
-    if (usuarios.findByEmailIgnoreCase(email).filter(u -> !u.getId().equals(id)).isPresent())
-      throw new IllegalArgumentException("E-mail já cadastrado.");
-    if (clientes.findAll().stream()
-        .anyMatch(u -> !u.getId().equals(id) && u.getDocumento().equals(form.documento().strip())))
-      throw new IllegalArgumentException("Documento já cadastrado.");
     if (senha != null && !senha.isEmpty()) {
       validarSenha(senha);
       c.definirSenhaHash(encoder.encode(senha));
     }
-    c.atualizar(form.nome().strip(), email, form.documento().strip(), form.telefone(), ativo);
+    atualizarDados(c, form, ativo);
+  }
+
+  public void editarMeusDados(@Valid ClienteForm form) {
+    var cliente = acesso.cliente();
+    atualizarDados(cliente, form, cliente.isAtivo());
+  }
+
+  private void atualizarDados(Cliente cliente, ClienteForm form, boolean ativo) {
+    String email = form.email().strip().toLowerCase(Locale.ROOT);
+    if (usuarios.findByEmailIgnoreCase(email).filter(u -> !u.getId().equals(cliente.getId())).isPresent())
+      throw new IllegalArgumentException("E-mail já cadastrado.");
+    if (clientes.findAll().stream().anyMatch(u ->
+        !u.getId().equals(cliente.getId()) && u.getDocumento().equals(form.documento().strip())))
+      throw new IllegalArgumentException("Documento já cadastrado.");
+    cliente.atualizar(form.nome().strip(), email, form.documento().strip(), form.telefone(), ativo);
   }
 
   public void editarAeronave(
       Long id, @Valid AeronaveForm form, boolean ativa, String justificativa) {
-    acesso.gestor();
+    var gestor = acesso.gestor();
     validarJustificativa(justificativa);
     var a =
         aeronaves
-            .findById(id)
+            .buscarParaAlteracao(id)
             .orElseThrow(() -> new IllegalArgumentException("Aeronave não encontrada."));
-    // Preserva o proprietário para manter consistência com as solicitações históricas.
-    if (!a.getCliente().getId().equals(form.clienteId()))
-      throw new IllegalArgumentException("O proprietário não pode ser alterado neste cadastro.");
-    if (ativa && !a.getCliente().isAtivo())
+    if (form.clienteId() == null) throw new IllegalArgumentException("Selecione o cliente da aeronave.");
+    var cliente = clientes.findById(form.clienteId())
+        .orElseThrow(() -> new IllegalArgumentException("Cliente não encontrado."));
+    if (ativa && !cliente.isAtivo())
       throw new IllegalArgumentException("Reative o cliente antes de ativar a aeronave.");
     String matricula = form.matricula().toUpperCase(Locale.ROOT);
     if (ativa
@@ -134,7 +154,18 @@ public class CadastroService {
                         && o.isAtiva()
                         && o.getMatricula().equalsIgnoreCase(matricula)))
       throw new IllegalArgumentException("Já existe uma aeronave ativa com esta matrícula.");
+    a.corrigirVinculo(cliente, justificativa, gestor);
     a.atualizar(matricula, form.fabricante().strip(), form.modelo().strip(), justificativa, ativa);
+  }
+
+  @Transactional(readOnly = true)
+  public java.util.List<AlteracaoVinculo> historicoVinculo(Long id) {
+    acesso.gestor();
+    var historico = aeronaves.findById(id).orElseThrow().getAlteracoesVinculo();
+    historico.forEach(h -> {
+      h.getClienteAnterior().getNome(); h.getClienteNovo().getNome(); h.getAutor().getNome();
+    });
+    return java.util.List.copyOf(historico);
   }
 
   private void validarJustificativa(String texto) {

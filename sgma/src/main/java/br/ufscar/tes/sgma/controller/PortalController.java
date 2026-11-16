@@ -115,8 +115,8 @@ public class PortalController {
   @PostMapping("/aeronaves")
   public String cadastrarAeronave(
       @Valid @ModelAttribute("form") CadastroService.AeronaveForm form,
-      @RequestParam(defaultValue = "") String justificativaVinculo,
       BindingResult errors,
+      @RequestParam(defaultValue = "") String justificativaVinculo,
       Model model,
       RedirectAttributes redirect) {
     if (errors.hasErrors()) return aeronaves(model);

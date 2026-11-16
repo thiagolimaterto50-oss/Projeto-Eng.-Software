@@ -67,6 +67,7 @@ public class CadastroEdicaoController {
   }
 
   @GetMapping("/aeronaves/{id}/editar")
+  @org.springframework.transaction.annotation.Transactional(readOnly = true)
   public String aeronave(@PathVariable Long id, Model model) {
     acesso.gestor();
     var a =
@@ -80,6 +81,8 @@ public class CadastroEdicaoController {
     if (!model.containsAttribute("ativa")) model.addAttribute("ativa", a.isAtiva());
     if (!model.containsAttribute("justificativaVinculo"))
       model.addAttribute("justificativaVinculo", a.getJustificativaVinculo());
+    model.addAttribute("clientes", clientes.findAll());
+    model.addAttribute("alteracoesVinculo", cadastro.historicoVinculo(id));
     return "editar-aeronave";
   }
 
