@@ -59,7 +59,7 @@ public class CadastroService {
 
   public Cliente cadastrarPublico(@Valid CadastroPublicoForm form) {
     if (!form.senha().equals(form.confirmacaoSenha()))
-      throw new IllegalArgumentException("As senhas não coincidem.");
+      throw new IllegalArgumentException("As senhas não coincidem. Em Confirmar senha, repita a senha informada.");
     // O tipo da conta é fixo. Nenhum perfil ou identificador vem do formulário público.
     return criarCliente(new ClienteForm(form.nome(), form.email(), form.documento(), form.telefone()), form.senha());
   }
@@ -68,9 +68,9 @@ public class CadastroService {
     validarSenha(senha);
     String email = form.email().strip().toLowerCase(Locale.ROOT);
     if (usuarios.existsByEmailIgnoreCase(email))
-      throw new IllegalArgumentException("E-mail já cadastrado.");
+      throw new IllegalArgumentException("E-mail já cadastrado. Informe outro endereço ou confira a conta existente.");
     if (clientes.existsByDocumento(form.documento().strip()))
-      throw new IllegalArgumentException("Documento já cadastrado.");
+      throw new IllegalArgumentException("Documento já cadastrado. Confira o número e a conta existente.");
     var cliente =
         new Cliente(form.nome().strip(), email, form.documento().strip(), form.telefone());
     cliente.definirSenhaHash(encoder.encode(senha));
@@ -125,10 +125,10 @@ public class CadastroService {
   private void atualizarDados(Cliente cliente, ClienteForm form, boolean ativo) {
     String email = form.email().strip().toLowerCase(Locale.ROOT);
     if (usuarios.findByEmailIgnoreCase(email).filter(u -> !u.getId().equals(cliente.getId())).isPresent())
-      throw new IllegalArgumentException("E-mail já cadastrado.");
+      throw new IllegalArgumentException("E-mail já cadastrado. Informe outro endereço ou confira a conta existente.");
     if (clientes.findAll().stream().anyMatch(u ->
         !u.getId().equals(cliente.getId()) && u.getDocumento().equals(form.documento().strip())))
-      throw new IllegalArgumentException("Documento já cadastrado.");
+      throw new IllegalArgumentException("Documento já cadastrado. Confira o número e a conta existente.");
     cliente.atualizar(form.nome().strip(), email, form.documento().strip(), form.telefone(), ativo);
   }
 

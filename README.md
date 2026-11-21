@@ -173,7 +173,7 @@ Revisão complementar em **16/11/2026** para RF001, RF002, RF003, RF014 e RN01, 
 | RNF003 | Conexão criptografada e senhas armazenadas de forma protegida | Parcial | BCrypt confirmado nos cadastros, alterações e quatro contas do ensaio MySQL. A execução documentada usa HTTP; falta configurar e verificar HTTPS. [Segurança][seg], [configuração][props] e [verificação][verif]. |
 | RNF004 | 95% das consultas em até 3 s com 50 sessões simultâneas | Pendente | Falta definir/validar o ambiente e executar o ensaio de carga. O documento trata a carga como meta acadêmica proposta. A suíte funcional de [testes][tests] não mede esse critério. |
 | RNF005 | Backup a cada 24 h e teste documentado de restauração | Pendente | Não há rotina agendada nem evidência de restauração no repositório. O ensaio de reinício descrito na [verificação][verif] demonstra persistência; restauração de backup continua pendente. |
-| RNF006 | Erros identificarem campo e correção; falha ao salvar não indicar sucesso | Parcial | Há validação, retorno de erro e tratamento de conflito. Mensagens de orçamento/confirmação agrupam campos, e o resumo de validação exibe apenas textos das restrições. Falta identificar consistentemente cada campo. [Controller][ctrl], [fragmentos][frag] e [tratamento de erros][erros]. |
+| RNF006 | Erros identificarem campo e correção; falha ao salvar não indicar sucesso | Implementado | Verificado em 21/11/2026 com Gradle, MockMvc, Thymeleaf e H2 (23 testes aprovados). O [catálogo de mensagens](sgma/src/main/resources/messages.properties) orienta por campo. Os [testes de integração][tests] verificam o HTML, os valores preservados, as mensagens e a persistência em envios inválidos e válidos de orçamento e confirmação. |
 
 ### Regras de negócio
 

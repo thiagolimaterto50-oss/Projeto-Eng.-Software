@@ -560,6 +560,30 @@ class PortalIntegrationTests {
   }
 
   @Test
+  void rnf006MostraCamposNaTelaEPreservaValoresValidos() throws Exception {
+    Long id = abrir(cliente, aeronave);
+    ok(gestor, post(url(id) + "/analisar"));
+    var falha = como(gestor, post(url(id) + "/orcamentos")
+        .param("descricaoServico", "Inspeção da cabine")
+        .param("valorTotal", "0")
+        .param("dataValidade", LocalDate.now().toString()))
+        .andExpect(flash().attribute("erro", containsString("Valor total (R$): informe um valor maior que zero")))
+        .andReturn().getFlashMap();
+    assertFalse(falha.containsKey("sucesso"));
+    como(gestor, get(url(id)).flashAttrs(falha))
+        .andExpect(content().string(containsString("Operação não concluída.")))
+        .andExpect(content().string(containsString("Inspeção da cabine")))
+        .andExpect(content().string(containsString("Valor total (R$): informe um valor maior que zero")));
+
+    como(cliente, post("/conta/dados").param("nome", "Nome preservado")
+        .param("email", "invalido").param("documento", ""))
+        .andExpect(content().string(containsString("E-mail: informe um endereço válido")))
+        .andExpect(content().string(containsString("Documento: preencha este campo")))
+        .andExpect(content().string(containsString("Nome preservado")))
+        .andExpect(content().string(containsString("Não foi salvo.")));
+  }
+
+  @Test
   void orcamentoVencidoValoresInvalidosERecusaFinal() throws Exception {
     Long id = abrir(cliente, aeronave);
     ok(gestor, post(url(id) + "/analisar"));
@@ -570,7 +594,14 @@ class PortalIntegrationTests {
                   .param("descricaoServico", "Reparo")
                   .param("valorTotal", valor)
                   .param("dataValidade", LocalDate.now().toString()))
-          .andExpect(flash().attributeExists("erro"));
+          .andExpect(flash().attribute("erro", containsString("Valor total (R$):")))
+          .andExpect(flash().attributeCount(2))
+          .andExpect(flash().attribute("rascunho", hasEntry("descricaoServico", "Reparo")));
+    new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+      var pedido = solicitacoes.findById(id).orElseThrow();
+      assertEquals(SituacaoSolicitacao.EM_ANALISE, pedido.getSituacao());
+      assertTrue(pedido.getOrcamentos().isEmpty());
+    });
     enviar(id, "50");
     Long oid = vigente(id);
     new TransactionTemplate(transactions)
@@ -609,11 +640,19 @@ class PortalIntegrationTests {
             "invalida",
             LocalDate.now().minusDays(1).toString(),
             LocalDate.now().plusDays(1).toString()))
-      como(responsavel, post(url(id) + "/confirmar").param("dataRealizacao", data))
-          .andExpect(flash().attributeExists("erro"));
+      como(responsavel, post(url(id) + "/confirmar").param("dataRealizacao", data).param("referencia", "Oficina"))
+          .andExpect(flash().attribute("erro", containsString("Data de realização:")))
+          .andExpect(flash().attributeCount(2))
+          .andExpect(flash().attribute("rascunho", hasEntry("referencia", "Oficina")));
+    var pendente = solicitacoes.findById(id).orElseThrow();
+    assertEquals(SituacaoSolicitacao.ENCAMINHADA, pendente.getSituacao());
+    assertNull(pendente.getConfirmacao());
     ok(
         responsavel,
         post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()));
+    var concluida = solicitacoes.findById(id).orElseThrow();
+    assertEquals(SituacaoSolicitacao.CONCLUIDA, concluida.getSituacao());
+    assertNotNull(concluida.getConfirmacao());
     como(
             responsavel,
             post(url(id) + "/confirmar").param("dataRealizacao", LocalDate.now().toString()))

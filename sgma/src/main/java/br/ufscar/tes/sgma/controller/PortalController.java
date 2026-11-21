@@ -3,8 +3,13 @@ package br.ufscar.tes.sgma.controller;
 import br.ufscar.tes.sgma.dao.*;
 import br.ufscar.tes.sgma.domain.*;
 import br.ufscar.tes.sgma.service.*;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.stream.Collectors;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -25,13 +30,18 @@ public class PortalController {
   private final SolicitacaoService servico;
   private final AcessoService acesso;
 
+  private final MessageSource mensagens;
+  private final HttpServletRequest request;
+
   public PortalController(
       IClienteDAO clientes,
       IAeronaveDAO aeronaves,
       ISolicitacaoDAO solicitacoes,
       CadastroService cadastro,
       SolicitacaoService servico,
-      AcessoService acesso) {
+      AcessoService acesso, MessageSource mensagens, HttpServletRequest request) {
+    this.request = request;
+    this.mensagens = mensagens;
     this.clientes = clientes;
     this.aeronaves = aeronaves;
     this.solicitacoes = solicitacoes;
@@ -81,8 +91,8 @@ public class PortalController {
   @PostMapping("/clientes")
   public String cadastrarCliente(
       @Valid @ModelAttribute("form") CadastroService.ClienteForm form,
-      @RequestParam(defaultValue = "") String senha,
       BindingResult errors,
+      @RequestParam(defaultValue = "") String senha,
       Model model,
       RedirectAttributes redirect) {
     if (errors.hasErrors()) return clientes(model);
@@ -119,6 +129,7 @@ public class PortalController {
       @RequestParam(defaultValue = "") String justificativaVinculo,
       Model model,
       RedirectAttributes redirect) {
+    if (justificativaVinculo.length() <= 1000) model.addAttribute("justificativaVinculo", justificativaVinculo);
     if (errors.hasErrors()) return aeronaves(model);
     try {
       cadastro.cadastrarAeronave(form, justificativaVinculo);
@@ -222,15 +233,16 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute("erro", "Informe uma pergunta de até 2000 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.solicitarComplemento(id, form);
         redirect.addFlashAttribute(
             "sucesso", "Pergunta registrada. Aguardando informação do cliente.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "pergunta");
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -242,15 +254,16 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute("erro", "Informe uma resposta de até 2000 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.responderComplemento(id, complementoId, form);
         redirect.addFlashAttribute(
             "sucesso", "Resposta registrada. Solicitação voltou para análise.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "resposta");
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -260,7 +273,7 @@ public class PortalController {
       servico.iniciarAnalise(id);
       redirect.addFlashAttribute("sucesso", "Análise iniciada.");
     } catch (IllegalArgumentException | IllegalStateException e) {
-      redirect.addFlashAttribute("erro", e.getMessage());
+      redirect.addFlashAttribute("erro", orientacao(e));
     }
     return "redirect:/solicitacoes/" + id;
   }
@@ -272,17 +285,15 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute(
-          "erro",
-          "Confira a descrição, o valor positivo (até duas casas decimais) e a validade a partir de"
-              + " hoje.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.enviarOrcamento(id, form);
         redirect.addFlashAttribute("sucesso", "Orçamento enviado para decisão do cliente.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "descricaoServico", "valorTotal", "dataValidade");
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -293,13 +304,14 @@ public class PortalController {
       @Valid SolicitacaoService.DecisaoForm form,
       BindingResult errors,
       RedirectAttributes redirect) {
-    if (errors.hasErrors()) redirect.addFlashAttribute("erro", "Selecione aprovar ou recusar.");
+    if (errors.hasErrors())
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.decidirOrcamento(id, oid, form);
         redirect.addFlashAttribute("sucesso", "Decisão registrada no histórico.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
     return "redirect:/solicitacoes/" + id;
   }
@@ -312,7 +324,7 @@ public class PortalController {
       redirect.addFlashAttribute(
           "sucesso", "Revisão iniciada. Envie uma nova versão após a análise.");
     } catch (IllegalArgumentException | IllegalStateException e) {
-      redirect.addFlashAttribute("erro", e.getMessage());
+      redirect.addFlashAttribute("erro", orientacao(e));
     }
     return "redirect:/solicitacoes/" + id;
   }
@@ -324,14 +336,15 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute("erro", "Informe um motivo de até 1000 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.cancelar(id, form);
         redirect.addFlashAttribute("sucesso", "Solicitação cancelada.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "motivo");
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -342,15 +355,16 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute("erro", "Informe o encaminhamento, até 2000 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.encaminhar(id, form);
         redirect.addFlashAttribute(
             "sucesso", "Serviço encaminhado. Aguardando confirmação da realização.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "descricao");
     return "redirect:/solicitacoes/" + id;
   }
 
@@ -361,16 +375,40 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute(
-          "erro", "Informe a data de realização até hoje e uma referência de até 500 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.confirmar(id, form);
         redirect.addFlashAttribute("sucesso", "Realização confirmada. Solicitação concluída.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "dataRealizacao", "referencia");
     return "redirect:/solicitacoes/" + id;
+  }
+
+  private String orientacao(RuntimeException erro) {
+    if (erro instanceof IllegalStateException)
+      return erro.getMessage() + " Confira a situação atual na ficha antes de prosseguir.";
+    return erro.getMessage();
+  }
+
+  private String mensagensDeCampo(BindingResult errors) {
+    return errors.getAllErrors().stream()
+        .map(error -> mensagens.getMessage(error, LocaleContextHolder.getLocale()))
+        .distinct()
+        .collect(Collectors.joining(" "));
+  }
+
+  private void preservarCampos(RedirectAttributes redirect, BindingResult errors, String... campos) {
+    if (!redirect.getFlashAttributes().containsKey("erro")) return;
+    var valores = new LinkedHashMap<String, Object>();
+    for (String campo : campos) {
+      String valor = request.getParameter(campo);
+      if (!errors.hasFieldErrors(campo) && valor != null && valor.length() <= 2000)
+        valores.put(campo, valor);
+    }
+    redirect.addFlashAttribute("rascunho", valores);
   }
 
   private java.util.List<Aeronave> aeronavesVisiveis() {
@@ -387,14 +425,15 @@ public class PortalController {
       BindingResult errors,
       RedirectAttributes redirect) {
     if (errors.hasErrors())
-      redirect.addFlashAttribute("erro", "Informe observações de até 2000 caracteres.");
+      redirect.addFlashAttribute("erro", mensagensDeCampo(errors));
     else
       try {
         servico.registrarTriagem(id, form);
         redirect.addFlashAttribute("sucesso", "Triagem registrada.");
       } catch (IllegalArgumentException | IllegalStateException e) {
-        redirect.addFlashAttribute("erro", e.getMessage());
+        redirect.addFlashAttribute("erro", orientacao(e));
       }
+    preservarCampos(redirect, errors, "observacoes");
     return "redirect:/solicitacoes/" + id;
   }
 }
