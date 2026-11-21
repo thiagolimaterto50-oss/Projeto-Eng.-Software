@@ -133,7 +133,7 @@ public class Solicitacao extends Entidade {
       throw new IllegalStateException(
           "Somente solicitações encaminhadas podem ser confirmadas uma única vez.");
     if (data == null || data.isBefore(dataHoraEncaminhamento.toLocalDate()))
-      throw new IllegalArgumentException("A realização não pode ser anterior ao encaminhamento.");
+      throw new IllegalArgumentException("Data de realização: selecione a data do encaminhamento ou uma data posterior, até hoje.");
     Confirmacao nova = new Confirmacao(this, data, referencia, responsavel);
     transicionar(SituacaoSolicitacao.CONCLUIDA, "Realização do serviço confirmada.", responsavel);
     confirmacao = nova;
